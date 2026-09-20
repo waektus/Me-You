@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 import cors from 'cors'
 import express from 'express'
 import multer from 'multer'
-import * as webpush from 'web-push'
+import webpush from 'web-push'
 import { and, desc, eq, gte, sql } from 'drizzle-orm'
 
 import { db } from './db'
