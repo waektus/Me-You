@@ -44,7 +44,10 @@ type Quest = {
   createdAt: string
 }
 
-const API_ORIGIN = 'http://localhost:3001'
+const API_ORIGIN =
+  import.meta.env.VITE_API_ORIGIN?.replace(/\/$/, '') ||
+  'http://localhost:3001'
+
 const API = `${API_ORIGIN}/api`
 
 const PRESET_ICONS = [
