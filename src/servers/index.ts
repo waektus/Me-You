@@ -15,7 +15,14 @@ import { quests, rewardRedemptions, users } from './db/schema'
 const app = express()
 const PORT = Number(process.env.PORT) || 3001
 
-const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads')
+const FRONTEND_URLS = (process.env.FRONTEND_URL ?? 'http://localhost:5173')
+  .split(',')
+  .map((url) => url.trim())
+  .filter(Boolean)
+
+const UPLOAD_DIR = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR)
+  : path.resolve(process.cwd(), 'uploads')
 fs.mkdirSync(UPLOAD_DIR, { recursive: true })
 
 const storage = multer.diskStorage({
@@ -49,9 +56,25 @@ function removeUploadedFile(file: Express.Multer.File | undefined) {
   fs.unlink(file.path, () => {})
 }
 
-app.use(cors())
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Requests without an Origin header (for example curl/health checks) are allowed.
+      if (!origin || FRONTEND_URLS.includes(origin)) {
+        callback(null, true)
+        return
+      }
+
+      callback(new Error(`CORS blocked origin: ${origin}`))
+    },
+  }),
+)
 app.use(express.json())
 app.use('/uploads', express.static(UPLOAD_DIR))
+
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true })
+})
 
 app.get('/api/users', async (_req, res) => {
   try {
@@ -511,6 +534,8 @@ app.use(
   },
 )
 
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`)
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`API running on port ${PORT}`)
+  console.log(`Allowed frontend origins: ${FRONTEND_URLS.join(', ')}`)
+  console.log(`Upload directory: ${UPLOAD_DIR}`)
 })
