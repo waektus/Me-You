@@ -1,0 +1,1 @@
+ALTER TABLE "quests" ADD COLUMN "icon" varchar(20) DEFAULT '🎯' NOT NULL;
