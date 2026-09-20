@@ -49,6 +49,22 @@ const API_ORIGIN =
   'http://localhost:3001'
 
 const API = `${API_ORIGIN}/api`
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY ?? ''
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i)
+  }
+
+  return outputArray
+}
 
 const PRESET_ICONS = [
   '🎯',
@@ -105,6 +121,13 @@ export default function App() {
   const [rewardModalOpen, setRewardModalOpen] = useState(false)
   const [rewardText, setRewardText] = useState('')
   const [redeeming, setRedeeming] = useState(false)
+  const [isInitialLoading, setIsInitialLoading] = useState(true)
+  const [isServerWaking, setIsServerWaking] = useState(false)
+  const [enablingNotifications, setEnablingNotifications] = useState(false)
+  const [notificationPermission, setNotificationPermission] =
+    useState<NotificationPermission>(() =>
+      typeof Notification === 'undefined' ? 'default' : Notification.permission,
+    )
 
   const currentUser = users.find((user) => user.id === currentUserId)
   const otherUser = users.find((user) => user.id !== currentUserId)
@@ -144,7 +167,26 @@ export default function App() {
   }
 
   useEffect(() => {
-    void loadData()
+    let active = true
+
+    const wakeTimer = window.setTimeout(() => {
+      if (active) {
+        setIsServerWaking(true)
+      }
+    }, 1200)
+
+    void loadData().finally(() => {
+      if (!active) return
+
+      window.clearTimeout(wakeTimer)
+      setIsServerWaking(false)
+      setIsInitialLoading(false)
+    })
+
+    return () => {
+      active = false
+      window.clearTimeout(wakeTimer)
+    }
   }, [])
 
   useEffect(() => {
@@ -355,6 +397,93 @@ export default function App() {
     setRewardText('')
   }
 
+  async function savePushSubscription(userId: number, subscription: PushSubscription) {
+    const response = await fetch(`${API}/notifications/subscribe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userId,
+        subscription: subscription.toJSON(),
+      }),
+    })
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => null)
+      throw new Error(data?.error ?? 'บันทึกการแจ้งเตือนไม่สำเร็จ')
+    }
+  }
+
+  async function syncPushSubscription(userId: number) {
+    if (
+      typeof Notification === 'undefined' ||
+      !('serviceWorker' in navigator) ||
+      Notification.permission !== 'granted'
+    ) {
+      return
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js')
+      const subscription = await registration.pushManager.getSubscription()
+
+      if (subscription) {
+        await savePushSubscription(userId, subscription)
+      }
+    } catch (error) {
+      console.error('sync push subscription failed', error)
+    }
+  }
+
+  async function enableNotifications() {
+    if (!currentUser || enablingNotifications) return
+
+    if (
+      typeof Notification === 'undefined' ||
+      !('serviceWorker' in navigator) ||
+      !('PushManager' in window)
+    ) {
+      showToast('เบราว์เซอร์นี้ยังไม่รองรับ Web Push')
+      return
+    }
+
+    if (!VAPID_PUBLIC_KEY) {
+      showToast('ยังไม่ได้ตั้ง VITE_VAPID_PUBLIC_KEY')
+      return
+    }
+
+    try {
+      setEnablingNotifications(true)
+
+      const permission = await Notification.requestPermission()
+      setNotificationPermission(permission)
+
+      if (permission !== 'granted') {
+        showToast('ยังไม่ได้อนุญาตการแจ้งเตือน')
+        return
+      }
+
+      const registration = await navigator.serviceWorker.register('/sw.js')
+      let subscription = await registration.pushManager.getSubscription()
+
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        })
+      }
+
+      await savePushSubscription(currentUser.id, subscription)
+      showToast(`เปิดแจ้งเตือนสำหรับ ${currentUser.name} แล้ว 🔔`)
+    } catch (error) {
+      console.error(error)
+      showToast(error instanceof Error ? error.message : 'เปิดแจ้งเตือนไม่สำเร็จ')
+    } finally {
+      setEnablingNotifications(false)
+    }
+  }
+
   async function createQuest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -535,6 +664,20 @@ export default function App() {
 
   return (
     <>
+      {isInitialLoading && (
+        <div className="server-wakeup" role="status" aria-live="polite">
+          <div className="server-wakeup-card">
+            <div className="server-wakeup-spinner" aria-hidden="true" />
+            <strong>
+              {isServerWaking ? 'กำลังปลุกเซิร์ฟเวอร์...' : 'กำลังโหลดข้อมูล...'}
+            </strong>
+            {isServerWaking && (
+              <small>ครั้งแรกอาจใช้เวลาสักครู่ เดี๋ยวก็มาแล้ว ☕</small>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="shell">
         <header className="topbar">
           <button
@@ -572,6 +715,26 @@ export default function App() {
             </button>
           </nav>
 
+          <button
+            type="button"
+            className={`notification-toggle ${
+              notificationPermission === 'granted' ? 'enabled' : ''
+            }`}
+            onClick={() => void enableNotifications()}
+            disabled={!currentUser || enablingNotifications}
+            title={
+              notificationPermission === 'granted'
+                ? `แจ้งเตือนสำหรับ ${currentUser?.name ?? ''}`
+                : 'เปิดการแจ้งเตือน'
+            }
+          >
+            {enablingNotifications
+              ? 'กำลังเปิด...'
+              : notificationPermission === 'granted'
+                ? '🔔 เปิดแล้ว'
+                : '🔕 เปิดแจ้งเตือน'}
+          </button>
+
           <label className="switcher">
             <span>กำลังใช้งานเป็น</span>
 
@@ -583,6 +746,7 @@ export default function App() {
                 const userId = Number(event.target.value)
                 setCurrentUserId(userId)
                 setTab('incoming')
+                void syncPushSubscription(userId)
 
                 const selectedUser = users.find((user) => user.id === userId)
 

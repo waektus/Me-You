@@ -2349,7 +2349,7 @@
 
     .reward-hero {
         display: flex;
-        color : white;
+        color: white;
         align-items: center;
         gap: 22px;
         margin-bottom: 20px;
@@ -2707,5 +2707,77 @@
 
         .reward-history-card {
             align-items: flex-start;
+        }
+    }
+
+    /* Append this block to the end of src/App.css */
+    .server-wakeup {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(10, 10, 18, 0.36);
+        backdrop-filter: blur(10px);
+    }
+
+    .server-wakeup-card {
+        width: min(360px, 100%);
+        display: grid;
+        justify-items: center;
+        gap: 10px;
+        padding: 24px;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.18);
+        text-align: center;
+    }
+
+    .server-wakeup-card strong {
+        font-size: 1rem;
+    }
+
+    .server-wakeup-card small {
+        opacity: 0.7;
+        line-height: 1.5;
+    }
+
+    .server-wakeup-spinner {
+        width: 34px;
+        height: 34px;
+        border: 3px solid rgba(0, 0, 0, 0.12);
+        border-top-color: currentColor;
+        border-radius: 999px;
+        animation: server-wakeup-spin 0.8s linear infinite;
+    }
+
+    @keyframes server-wakeup-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .notification-toggle {
+        border: 0;
+        border-radius: 999px;
+        padding: 9px 12px;
+        cursor: pointer;
+        white-space: nowrap;
+        font: inherit;
+    }
+
+    .notification-toggle.enabled {
+        font-weight: 700;
+    }
+
+    .notification-toggle:disabled {
+        cursor: wait;
+        opacity: 0.65;
+    }
+
+    @media (max-width: 760px) {
+        .notification-toggle {
+            width: 100%;
         }
     }

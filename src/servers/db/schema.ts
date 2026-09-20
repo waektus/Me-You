@@ -94,3 +94,22 @@ export const rewardRedemptions = pgTable('reward_redemptions', {
     .defaultNow()
     .notNull(),
 })
+
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  id: serial('id').primaryKey(),
+
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+
+  endpoint: text('endpoint')
+    .notNull()
+    .unique(),
+
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+
+  createdAt: timestamp('created_at')
+    .defaultNow()
+    .notNull(),
+})

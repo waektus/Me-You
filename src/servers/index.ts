@@ -7,10 +7,11 @@ import { randomUUID } from 'node:crypto'
 import cors from 'cors'
 import express from 'express'
 import multer from 'multer'
+import * as webpush from 'web-push'
 import { and, desc, eq, gte, sql } from 'drizzle-orm'
 
 import { db } from './db'
-import { quests, rewardRedemptions, users } from './db/schema'
+import { pushSubscriptions, quests, rewardRedemptions, users } from './db/schema'
 
 const app = express()
 const PORT = Number(process.env.PORT) || 3001
@@ -19,6 +20,21 @@ const FRONTEND_URLS = (process.env.FRONTEND_URL ?? 'http://localhost:5173')
   .split(',')
   .map((url) => url.trim())
   .filter(Boolean)
+
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY ?? ''
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? ''
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT ?? ''
+const PUSH_ENABLED = Boolean(
+  VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY && VAPID_SUBJECT,
+)
+
+if (PUSH_ENABLED) {
+  webpush.setVapidDetails(
+    VAPID_SUBJECT,
+    VAPID_PUBLIC_KEY,
+    VAPID_PRIVATE_KEY,
+  )
+}
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR
   ? path.resolve(process.env.UPLOAD_DIR)
@@ -74,6 +90,126 @@ app.use('/uploads', express.static(UPLOAD_DIR))
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true })
+})
+
+type PushMessage = {
+  title: string
+  body: string
+  url?: string
+}
+
+async function sendPushToUser(userId: number, message: PushMessage) {
+  if (!PUSH_ENABLED) return
+
+  try {
+    const subscriptions = await db
+      .select()
+      .from(pushSubscriptions)
+      .where(eq(pushSubscriptions.userId, userId))
+
+    await Promise.all(
+      subscriptions.map(async (subscription) => {
+        try {
+          await webpush.sendNotification(
+            {
+              endpoint: subscription.endpoint,
+              keys: {
+                p256dh: subscription.p256dh,
+                auth: subscription.auth,
+              },
+            },
+            JSON.stringify({
+              title: message.title,
+              body: message.body,
+              url: message.url ?? '/',
+            }),
+          )
+        } catch (error) {
+          const statusCode =
+            typeof error === 'object' &&
+            error !== null &&
+            'statusCode' in error
+              ? Number((error as { statusCode?: number }).statusCode)
+              : 0
+
+          if (statusCode === 404 || statusCode === 410) {
+            await db
+              .delete(pushSubscriptions)
+              .where(eq(pushSubscriptions.endpoint, subscription.endpoint))
+            return
+          }
+
+          console.error('push notification failed', error)
+        }
+      }),
+    )
+  } catch (error) {
+    console.error('load push subscriptions failed', error)
+  }
+}
+
+async function getUserName(userId: number) {
+  const [user] = await db
+    .select({ name: users.name })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+
+  return user?.name ?? 'อีกฝ่าย'
+}
+
+app.post('/api/notifications/subscribe', async (req, res) => {
+  try {
+    const userId = Number(req.body.userId)
+    const subscription = req.body.subscription
+    const endpoint =
+      typeof subscription?.endpoint === 'string' ? subscription.endpoint : ''
+    const p256dh =
+      typeof subscription?.keys?.p256dh === 'string'
+        ? subscription.keys.p256dh
+        : ''
+    const auth =
+      typeof subscription?.keys?.auth === 'string'
+        ? subscription.keys.auth
+        : ''
+
+    if (!Number.isInteger(userId) || userId <= 0 || !endpoint || !p256dh || !auth) {
+      return res.status(400).json({ error: 'ข้อมูลการแจ้งเตือนไม่ครบ' })
+    }
+
+    const [user] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+
+    if (!user) {
+      return res.status(404).json({ error: 'ไม่พบผู้ใช้' })
+    }
+
+    const [saved] = await db
+      .insert(pushSubscriptions)
+      .values({
+        userId,
+        endpoint,
+        p256dh,
+        auth,
+      })
+      .onConflictDoUpdate({
+        target: pushSubscriptions.endpoint,
+        set: {
+          userId,
+          p256dh,
+          auth,
+        },
+      })
+      .returning({ id: pushSubscriptions.id })
+
+    return res.status(201).json({ ok: true, id: saved.id })
+  } catch (error) {
+    console.error(error)
+    return res.status(500).json({ error: 'เปิดการแจ้งเตือนไม่สำเร็จ' })
+  }
 })
 
 app.get('/api/users', async (_req, res) => {
@@ -165,6 +301,19 @@ app.post('/api/rewards/redeem', async (req, res) => {
       }
     })
 
+    const redeemerName = await getUserName(userId)
+    const allUsers = await db.select({ id: users.id }).from(users)
+
+    for (const user of allUsers) {
+      if (user.id !== userId) {
+        void sendPushToUser(user.id, {
+          title: 'มีการแลกรางวัล 🎁',
+          body: `${redeemerName} แลกรางวัล “${reward}” แล้ว`,
+          url: '/',
+        })
+      }
+    }
+
     return res.status(201).json(result)
   } catch (error) {
     console.error(error)
@@ -229,6 +378,13 @@ app.post('/api/quests', async (req, res) => {
       })
       .returning()
 
+    const senderName = await getUserName(newQuest.senderId)
+    void sendPushToUser(newQuest.receiverId, {
+      title: 'มีเควสใหม่ 🎯',
+      body: `${senderName} ส่งเควส “${newQuest.title}” ให้คุณ`,
+      url: '/',
+    })
+
     return res.status(201).json(newQuest)
   } catch (error) {
     console.error(error)
@@ -278,6 +434,13 @@ app.patch('/api/quests/:id/complete', async (req, res) => {
         return res.status(409).json({ error: 'Quest นี้ถูกดำเนินการแล้ว' })
       }
 
+      const receiverName = await getUserName(quest.receiverId)
+      void sendPushToUser(quest.senderId, {
+        title: 'มีเควสรอตรวจ ✅',
+        body: `${receiverName} ทำ “${quest.title}” เสร็จแล้ว`,
+        url: '/',
+      })
+
       return res.json(updatedQuest)
     }
 
@@ -305,6 +468,13 @@ app.patch('/api/quests/:id/complete', async (req, res) => {
         .where(eq(users.id, quest.receiverId))
 
       return updated
+    })
+
+    const receiverName = await getUserName(quest.receiverId)
+    void sendPushToUser(quest.senderId, {
+      title: 'เควสสำเร็จแล้ว ⭐',
+      body: `${receiverName} ทำ “${quest.title}” สำเร็จแล้ว`,
+      url: '/',
     })
 
     return res.json(updatedQuest)
@@ -400,6 +570,13 @@ app.post(
           return res.status(409).json({ error: 'Quest นี้ส่งรูปแล้ว' })
         }
 
+        const receiverName = await getUserName(quest.receiverId)
+        void sendPushToUser(quest.senderId, {
+          title: 'มีรูปใหม่รอตรวจ 📷',
+          body: `${receiverName} ส่งรูปสำหรับ “${quest.title}” แล้ว`,
+          url: '/',
+        })
+
         return res.json(updatedQuest)
       }
 
@@ -432,6 +609,13 @@ app.post(
           .where(eq(users.id, quest.receiverId))
 
         return updated
+      })
+
+      const receiverName = await getUserName(quest.receiverId)
+      void sendPushToUser(quest.senderId, {
+        title: 'Photo Quest สำเร็จแล้ว 📷⭐',
+        body: `${receiverName} ทำ “${quest.title}” สำเร็จแล้ว`,
+        url: '/',
       })
 
       return res.json(updatedQuest)
@@ -499,6 +683,12 @@ app.patch('/api/quests/:id/approve', async (req, res) => {
       return updated
     })
 
+    void sendPushToUser(quest.receiverId, {
+      title: 'เควสผ่านแล้ว ⭐',
+      body: `“${quest.title}” ผ่านแล้ว ได้รับ ${quest.points} ดาว`,
+      url: '/',
+    })
+
     return res.json(updatedQuest)
   } catch (error) {
     console.error(error)
@@ -538,4 +728,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`API running on port ${PORT}`)
   console.log(`Allowed frontend origins: ${FRONTEND_URLS.join(', ')}`)
   console.log(`Upload directory: ${UPLOAD_DIR}`)
+  console.log(`Web Push: ${PUSH_ENABLED ? 'enabled' : 'disabled'}`)
 })
