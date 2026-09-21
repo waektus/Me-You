@@ -1,13 +1,12 @@
 import 'dotenv/config'
 
-import fs from 'node:fs'
-import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 import cors from 'cors'
 import express from 'express'
 import multer from 'multer'
 import webpush from 'web-push'
+import { createClient } from '@supabase/supabase-js'
 import { and, desc, eq, gte, sql } from 'drizzle-orm'
 
 import { db } from './db'
@@ -36,24 +35,27 @@ if (PUSH_ENABLED) {
   )
 }
 
-const UPLOAD_DIR = process.env.UPLOAD_DIR
-  ? path.resolve(process.env.UPLOAD_DIR)
-  : path.resolve(process.cwd(), 'uploads')
-fs.mkdirSync(UPLOAD_DIR, { recursive: true })
+const SUPABASE_URL = process.env.SUPABASE_URL ?? ''
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+const SUPABASE_STORAGE_BUCKET =
+  process.env.SUPABASE_STORAGE_BUCKET ?? 'quest-photos'
 
-const storage = multer.diskStorage({
-  destination(_req, _file, callback) {
-    callback(null, UPLOAD_DIR)
-  },
+const STORAGE_ENABLED = Boolean(
+  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && SUPABASE_STORAGE_BUCKET,
+)
 
-  filename(_req, file, callback) {
-    const extension = path.extname(file.originalname).toLowerCase() || '.jpg'
-    callback(null, `${Date.now()}-${randomUUID()}${extension}`)
-  },
-})
+const supabase = STORAGE_ENABLED
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    })
+  : null
 
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: {
     fileSize: 10 * 1024 * 1024,
   },
@@ -67,9 +69,29 @@ const upload = multer({
   },
 })
 
-function removeUploadedFile(file: Express.Multer.File | undefined) {
-  if (!file) return
-  fs.unlink(file.path, () => {})
+function getImageExtension(file: Express.Multer.File) {
+  const extensionByMime: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    'image/heic': 'heic',
+    'image/heif': 'heif',
+  }
+
+  return extensionByMime[file.mimetype] ?? 'jpg'
+}
+
+async function deleteStoredPhoto(path: string | null) {
+  if (!supabase || !path) return
+
+  const { error } = await supabase.storage
+    .from(SUPABASE_STORAGE_BUCKET)
+    .remove([path])
+
+  if (error) {
+    console.error('delete Supabase Storage photo failed', error)
+  }
 }
 
 app.use(
@@ -86,7 +108,6 @@ app.use(
   }),
 )
 app.use(express.json())
-app.use('/uploads', express.static(UPLOAD_DIR))
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true })
@@ -493,16 +514,23 @@ app.post(
   '/api/quests/:id/photo',
   upload.single('photo'),
   async (req, res) => {
+    let uploadedPath: string | null = null
+
     try {
       const questId = Number(req.params.id)
 
       if (Number.isNaN(questId)) {
-        removeUploadedFile(req.file)
         return res.status(400).json({ error: 'Quest ID ไม่ถูกต้อง' })
       }
 
       if (!req.file) {
         return res.status(400).json({ error: 'ไม่พบรูปภาพ' })
+      }
+
+      if (!supabase) {
+        return res.status(500).json({
+          error: 'ยังไม่ได้ตั้งค่า Supabase Storage บนเซิร์ฟเวอร์',
+        })
       }
 
       const [quest] = await db
@@ -512,17 +540,14 @@ app.post(
         .limit(1)
 
       if (!quest) {
-        removeUploadedFile(req.file)
         return res.status(404).json({ error: 'ไม่พบ Quest' })
       }
 
       if (quest.questType !== 'photo') {
-        removeUploadedFile(req.file)
         return res.status(400).json({ error: 'Quest นี้ไม่ใช่เควสถ่ายภาพ' })
       }
 
       if (quest.status !== 'pending') {
-        removeUploadedFile(req.file)
         return res.status(409).json({ error: 'Quest นี้ส่งรูปแล้ว' })
       }
 
@@ -532,20 +557,39 @@ app.post(
           : ''
 
       if (quest.requirePhotoReason && !photoReason) {
-        removeUploadedFile(req.file)
         return res.status(400).json({
           error: 'เควสนี้ต้องอธิบายเหตุผลที่ถ่าย',
         })
       }
 
       if (photoReason.length > 300) {
-        removeUploadedFile(req.file)
         return res.status(400).json({
           error: 'เหตุผลต้องไม่เกิน 300 ตัวอักษร',
         })
       }
 
-      const photoUrl = `/uploads/${req.file.filename}`
+      const extension = getImageExtension(req.file)
+      uploadedPath =
+        `quests/${quest.id}/${Date.now()}-${randomUUID()}.${extension}`
+
+      const { error: uploadError } = await supabase.storage
+        .from(SUPABASE_STORAGE_BUCKET)
+        .upload(uploadedPath, req.file.buffer, {
+          contentType: req.file.mimetype,
+          cacheControl: '3600',
+          upsert: false,
+        })
+
+      if (uploadError) {
+        console.error('Supabase Storage upload failed', uploadError)
+        return res.status(500).json({ error: 'อัปโหลดรูปขึ้น Storage ไม่สำเร็จ' })
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from(SUPABASE_STORAGE_BUCKET)
+        .getPublicUrl(uploadedPath)
+
+      const photoUrl = publicUrlData.publicUrl
       const submittedAt = new Date()
 
       if (quest.verifyType === 'review') {
@@ -566,7 +610,8 @@ app.post(
           .returning()
 
         if (!updatedQuest) {
-          removeUploadedFile(req.file)
+          await deleteStoredPhoto(uploadedPath)
+          uploadedPath = null
           return res.status(409).json({ error: 'Quest นี้ส่งรูปแล้ว' })
         }
 
@@ -621,7 +666,10 @@ app.post(
       return res.json(updatedQuest)
     } catch (error) {
       console.error(error)
-      removeUploadedFile(req.file)
+
+      if (uploadedPath) {
+        await deleteStoredPhoto(uploadedPath)
+      }
 
       if (
         error instanceof Error &&
@@ -727,6 +775,7 @@ app.use(
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`API running on port ${PORT}`)
   console.log(`Allowed frontend origins: ${FRONTEND_URLS.join(', ')}`)
-  console.log(`Upload directory: ${UPLOAD_DIR}`)
+  console.log(`Supabase Storage: ${STORAGE_ENABLED ? 'enabled' : 'disabled'}`)
+  console.log(`Storage bucket: ${SUPABASE_STORAGE_BUCKET}`)
   console.log(`Web Push: ${PUSH_ENABLED ? 'enabled' : 'disabled'}`)
 })
