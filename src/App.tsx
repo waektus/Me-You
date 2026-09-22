@@ -1383,7 +1383,7 @@ export default function App() {
               maxLength={60}
               placeholder={
                 questMode === 'couple'
-                  ? 'เช่น ไปเดินเล่นด้วยกัน 20 นาที'
+                  ? 'เช่น MISSION ...'
                   : questType === 'photo'
                     ? 'เช่น ถ่ายรูปท้องฟ้าที่แสนสดใส'
                     : 'เช่น ดื่มน้ำให้ครบ 8 แก้ว'
@@ -1402,7 +1402,7 @@ export default function App() {
               maxLength={180}
               placeholder={
                 questMode === 'couple'
-                  ? 'เช่น ทำด้วยกัน แล้วกดเสร็จทั้งสองคนนะ'
+                  ? 'เช่น ไปเดินเล่น 20 นาที'
                   : questType === 'photo'
                     ? 'เช่น ถ่ายวิวที่ชอบที่สุดระหว่างวันนี้'
                     : 'บอกสิ่งที่ต้องทำให้ชัดเจน'
