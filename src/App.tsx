@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import './App.css'
+import './couple-quest.css'
 
 type Page = 'quests' | 'gallery' | 'shop'
 type Tab = 'incoming' | 'sent' | 'review' | 'done'
 type QuestStatus = 'pending' | 'review' | 'completed'
 type VerifyType = 'review' | 'instant'
 type QuestType = 'normal' | 'photo'
+type QuestMode = 'solo' | 'couple'
 
 type User = {
   id: number
@@ -31,6 +33,9 @@ type Quest = {
   description: string | null
   icon: string
   questType: QuestType
+  questMode: QuestMode
+  senderCompleted: boolean
+  receiverCompleted: boolean
   photoUrl: string | null
   photoSubmittedAt: string | null
   requirePhotoReason: boolean
@@ -107,6 +112,7 @@ export default function App() {
   const [icon, setIcon] = useState('🎯')
   const [customIconOpen, setCustomIconOpen] = useState(false)
   const [questType, setQuestType] = useState<QuestType>('normal')
+  const [questMode, setQuestMode] = useState<QuestMode>('solo')
   const [requirePhotoReason, setRequirePhotoReason] = useState(false)
   const [due, setDue] = useState('')
   const [points, setPoints] = useState(1)
@@ -243,22 +249,28 @@ export default function App() {
     if (currentUserId === null) return []
 
     return quests.filter((quest) => {
+      const isParticipant =
+        quest.senderId === currentUserId || quest.receiverId === currentUserId
+
       if (tab === 'incoming') {
+        if (quest.questMode === 'couple') {
+          return isParticipant && quest.status === 'pending'
+        }
+
         return quest.receiverId === currentUserId && quest.status === 'pending'
       }
 
       if (tab === 'sent') {
+        if (quest.questMode === 'couple') return false
         return quest.senderId === currentUserId && quest.status !== 'completed'
       }
 
       if (tab === 'review') {
+        if (quest.questMode === 'couple') return false
         return quest.senderId === currentUserId && quest.status === 'review'
       }
 
-      return (
-        quest.status === 'completed' &&
-        (quest.senderId === currentUserId || quest.receiverId === currentUserId)
-      )
+      return quest.status === 'completed' && isParticipant
     })
   }, [quests, currentUserId, tab])
 
@@ -374,6 +386,7 @@ export default function App() {
     setIcon('🎯')
     setCustomIconOpen(false)
     setQuestType('normal')
+    setQuestMode('solo')
     setRequirePhotoReason(false)
     setDue('')
     setPoints(1)
@@ -503,13 +516,20 @@ export default function App() {
           description: description.trim(),
           icon:
             icon.trim() ||
-            (questType === 'photo' ? '📷' : '🎯'),
-          questType,
+            (questMode === 'couple'
+              ? '💞'
+              : questType === 'photo'
+                ? '📷'
+                : '🎯'),
+          questType: questMode === 'couple' ? 'normal' : questType,
+          questMode,
           requirePhotoReason:
-            questType === 'photo' ? requirePhotoReason : false,
+            questMode === 'solo' && questType === 'photo'
+              ? requirePhotoReason
+              : false,
           due,
           points,
-          verifyType,
+          verifyType: questMode === 'couple' ? 'instant' : verifyType,
           senderId: currentUser.id,
           receiverId: otherUser.id,
         }),
@@ -523,11 +543,65 @@ export default function App() {
 
       setQuests((current) => [newQuest, ...current])
       closeModal()
-      setTab('sent')
-      showToast(`ส่งเควสให้${otherUser.name}แล้ว`)
+
+      if (newQuest.questMode === 'couple') {
+        setTab('incoming')
+        showToast(`สร้าง Couple Quest กับ${otherUser.name}แล้ว 💞`)
+      } else {
+        setTab('sent')
+        showToast(`ส่งเควสให้${otherUser.name}แล้ว`)
+      }
     } catch (error) {
       console.error(error)
       showToast('ส่งเควสไม่สำเร็จ')
+    }
+  }
+
+  function isCurrentUserDoneWithCoupleQuest(quest: Quest) {
+    if (currentUserId === null) return false
+
+    if (quest.senderId === currentUserId) {
+      return quest.senderCompleted
+    }
+
+    if (quest.receiverId === currentUserId) {
+      return quest.receiverCompleted
+    }
+
+    return false
+  }
+
+  async function completeCoupleQuest(quest: Quest) {
+    if (!currentUser) return
+
+    try {
+      const response = await fetch(`${API}/quests/${quest.id}/couple-complete`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: currentUser.id,
+        }),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(data?.error ?? 'ยืนยัน Couple Quest ไม่สำเร็จ')
+      }
+
+      if (data?.completed) {
+        playStarBurst()
+        showToast(`Couple Quest สำเร็จ! ทั้งคู่ได้รับ ${quest.points} ดาว 💞⭐`)
+      } else {
+        showToast('ทำส่วนของคุณแล้ว รออีกฝ่ายนะ 💞')
+      }
+
+      await loadData()
+    } catch (error) {
+      console.error(error)
+      showToast(error instanceof Error ? error.message : 'ยืนยัน Couple Quest ไม่สำเร็จ')
     }
   }
 
@@ -856,7 +930,12 @@ export default function App() {
                     style={{ animationDelay: `${index * 70}ms` }}
                   >
                     <div className="qicon">
-                      {quest.icon || (quest.questType === 'photo' ? '📷' : '🎯')}
+                      {quest.icon ||
+                        (quest.questMode === 'couple'
+                          ? '💞'
+                          : quest.questType === 'photo'
+                            ? '📷'
+                            : '🎯')}
                     </div>
 
                     <div className="qbody">
@@ -868,10 +947,32 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="points">+{quest.points} ★</div>
+                        <div className="points">
+                          {quest.questMode === 'couple'
+                            ? `ทั้งคู่ +${quest.points} ★`
+                            : `+${quest.points} ★`}
+                        </div>
                       </div>
 
-                      {quest.questType === 'photo' && (
+                      {quest.questMode === 'couple' && (
+                        <div className="couple-quest-panel">
+                          <div className="couple-quest-label">💞 Couple Quest</div>
+
+                          <div className="couple-progress-list">
+                            <div className={quest.senderCompleted ? 'done' : ''}>
+                              <span>{getUserName(quest.senderId)}</span>
+                              <strong>{quest.senderCompleted ? '✓ ทำแล้ว' : 'รอทำ'}</strong>
+                            </div>
+
+                            <div className={quest.receiverCompleted ? 'done' : ''}>
+                              <span>{getUserName(quest.receiverId)}</span>
+                              <strong>{quest.receiverCompleted ? '✓ ทำแล้ว' : 'รอทำ'}</strong>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {quest.questType === 'photo' && quest.questMode === 'solo' && (
                         <div className="photo-quest-label">
                           📷 เควสถ่ายภาพ
                           {quest.requirePhotoReason ? ' · 💭 ต้องอธิบายเหตุผล' : ''}
@@ -910,16 +1011,33 @@ export default function App() {
                           </span>
                         )}
 
-                        {tab === 'incoming' && quest.questType === 'normal' && (
-                          <button
-                            className="action"
-                            onClick={() => void completeQuest(quest)}
-                          >
-                            ทำเสร็จแล้ว
-                          </button>
+                        {tab === 'incoming' && quest.questMode === 'couple' && (
+                          isCurrentUserDoneWithCoupleQuest(quest) ? (
+                            <span className="couple-done-chip">✓ คุณทำแล้ว · รออีกฝ่าย</span>
+                          ) : (
+                            <button
+                              className="action couple-action"
+                              onClick={() => void completeCoupleQuest(quest)}
+                            >
+                              💞 ฉันทำแล้ว
+                            </button>
+                          )
                         )}
 
-                        {tab === 'incoming' && quest.questType === 'photo' && (
+                        {tab === 'incoming' &&
+                          quest.questMode === 'solo' &&
+                          quest.questType === 'normal' && (
+                            <button
+                              className="action"
+                              onClick={() => void completeQuest(quest)}
+                            >
+                              ทำเสร็จแล้ว
+                            </button>
+                          )}
+
+                        {tab === 'incoming' &&
+                          quest.questMode === 'solo' &&
+                          quest.questType === 'photo' && (
                           <label
                             className={`action photo-submit ${
                               uploadingQuestId === quest.id ? 'disabled' : ''
@@ -947,7 +1065,7 @@ export default function App() {
                           </label>
                         )}
 
-                        {tab === 'review' && (
+                        {tab === 'review' && quest.questMode === 'solo' && (
                           <button
                             className="action"
                             onClick={() => void approveQuest(quest)}
@@ -1169,13 +1287,14 @@ export default function App() {
               <button
                 type="button"
                 className={`quest-type-option ${
-                  questType === 'normal' ? 'selected' : ''
+                  questMode === 'solo' && questType === 'normal' ? 'selected' : ''
                 }`}
                 onClick={() => {
+                  setQuestMode('solo')
                   setQuestType('normal')
                   setRequirePhotoReason(false)
 
-                  if (icon === '📷') {
+                  if (icon === '📷' || icon === '💞') {
                     setIcon('🎯')
                   }
                 }}
@@ -1190,12 +1309,13 @@ export default function App() {
               <button
                 type="button"
                 className={`quest-type-option ${
-                  questType === 'photo' ? 'selected' : ''
+                  questMode === 'solo' && questType === 'photo' ? 'selected' : ''
                 }`}
                 onClick={() => {
+                  setQuestMode('solo')
                   setQuestType('photo')
 
-                  if (icon === '🎯') {
+                  if (icon === '🎯' || icon === '💞') {
                     setIcon('📷')
                   }
                 }}
@@ -1206,9 +1326,37 @@ export default function App() {
                   <small>รูปจะเข้า Gallery</small>
                 </div>
               </button>
+
+              <button
+                type="button"
+                className={`quest-type-option ${
+                  questMode === 'couple' ? 'selected' : ''
+                }`}
+                onClick={() => {
+                  setQuestMode('couple')
+                  setQuestType('normal')
+                  setRequirePhotoReason(false)
+                  setVerifyType('instant')
+                  setIcon('💞')
+                  setCustomIconOpen(false)
+                }}
+              >
+                <span>💞</span>
+                <div>
+                  <strong>Couple Quest</strong>
+                  <small>ทำพร้อมกันทั้งคู่</small>
+                </div>
+              </button>
             </div>
 
-            {questType === 'photo' && (
+            {questMode === 'couple' && (
+              <div className="couple-create-note">
+                <strong>💞 ทั้งคู่ต้องกด “ฉันทำแล้ว”</strong>
+                <small>เมื่อครบทั้งสองคน จะได้รับ {points} ดาวต่อคนอัตโนมัติ</small>
+              </div>
+            )}
+
+            {questMode === 'solo' && questType === 'photo' && (
               <label className="photo-reason-option">
                 <input
                   type="checkbox"
@@ -1234,9 +1382,11 @@ export default function App() {
               required
               maxLength={60}
               placeholder={
-                questType === 'photo'
-                  ? 'เช่น ถ่ายรูปท้องฟ้าที่แสนสดใส'
-                  : 'เช่น ดื่มน้ำให้ครบ 8 ชั่วโมง'
+                questMode === 'couple'
+                  ? 'เช่น ไปเดินเล่นด้วยกัน 20 นาที'
+                  : questType === 'photo'
+                    ? 'เช่น ถ่ายรูปท้องฟ้าที่แสนสดใส'
+                    : 'เช่น ดื่มน้ำให้ครบ 8 แก้ว'
               }
               value={title}
               onChange={(event) => setTitle(event.target.value)}
@@ -1251,9 +1401,11 @@ export default function App() {
               rows={3}
               maxLength={180}
               placeholder={
-                questType === 'photo'
-                  ? 'เช่น ถ่ายวิวที่ชอบที่สุดระหว่างวันนี้'
-                  : 'บอกสิ่งที่ต้องทำให้ชัดเจน'
+                questMode === 'couple'
+                  ? 'เช่น ทำด้วยกัน แล้วกดเสร็จทั้งสองคนนะ'
+                  : questType === 'photo'
+                    ? 'เช่น ถ่ายวิวที่ชอบที่สุดระหว่างวันนี้'
+                    : 'บอกสิ่งที่ต้องทำให้ชัดเจน'
               }
               value={description}
               onChange={(event) => setDescription(event.target.value)}
@@ -1341,20 +1493,26 @@ export default function App() {
             </div>
           </div>
 
-          <div className="field">
-            <label htmlFor="verify">การยืนยัน</label>
+          {questMode === 'solo' ? (
+            <div className="field">
+              <label htmlFor="verify">การยืนยัน</label>
 
-            <select
-              id="verify"
-              value={verifyType}
-              onChange={(event) => {
-                setVerifyType(event.target.value as VerifyType)
-              }}
-            >
-              <option value="review">ให้อีกฝ่ายตรวจสอบ</option>
-              <option value="instant">สำเร็จและรับดาวทันที</option>
-            </select>
-          </div>
+              <select
+                id="verify"
+                value={verifyType}
+                onChange={(event) => {
+                  setVerifyType(event.target.value as VerifyType)
+                }}
+              >
+                <option value="review">ให้อีกฝ่ายตรวจสอบ</option>
+                <option value="instant">สำเร็จและรับดาวทันที</option>
+              </select>
+            </div>
+          ) : (
+            <div className="couple-verify-note">
+              ✨ Couple Quest สำเร็จทันทีเมื่อทั้งสองคนกดยืนยันครบ
+            </div>
+          )}
 
           <div className="modal-actions">
             <button type="button" className="action" onClick={closeModal}>
@@ -1362,7 +1520,9 @@ export default function App() {
             </button>
 
             <button className="primary" type="submit">
-              ส่งให้{otherUser?.name ?? 'คนพิเศษ'}
+              {questMode === 'couple'
+                ? `สร้างกับ${otherUser?.name ?? 'คนพิเศษ'} 💞`
+                : `ส่งให้${otherUser?.name ?? 'คนพิเศษ'}`}
             </button>
           </div>
         </form>

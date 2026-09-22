@@ -26,6 +26,11 @@ export const questTypeEnum = pgEnum('quest_type', [
   'photo',
 ])
 
+export const questModeEnum = pgEnum('quest_mode', [
+  'solo',
+  'couple',
+])
+
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   name: varchar('name', { length: 50 }).notNull(),
@@ -45,6 +50,18 @@ export const quests = pgTable('quests', {
   questType: questTypeEnum('quest_type')
     .notNull()
     .default('normal'),
+
+  questMode: questModeEnum('quest_mode')
+    .notNull()
+    .default('solo'),
+
+  senderCompleted: boolean('sender_completed')
+    .notNull()
+    .default(false),
+
+  receiverCompleted: boolean('receiver_completed')
+    .notNull()
+    .default(false),
 
   photoUrl: text('photo_url'),
   photoSubmittedAt: timestamp('photo_submitted_at'),
