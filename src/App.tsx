@@ -1064,7 +1064,7 @@ export default function App() {
                         <div className="couple-quest-box">
                           <div className="couple-quest-label">
                             {quest.questType === 'photo'
-                              ? '💞📷 Couple Photo Quest'
+                              ? '😎 Couple Photo Quest'
                               : '💞 Couple Quest'}{' '}
                             · ทั้งคู่ได้ +{quest.points} ★
                           </div>
