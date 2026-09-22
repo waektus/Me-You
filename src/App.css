@@ -2711,7 +2711,7 @@
     }
 
     /* Append this block to the end of src/App.css */
-    /* Append this block to the end of src/App.css */
+    
     .server-wakeup {
         position: fixed;
         inset: 0;
@@ -2782,4 +2782,3 @@
             width: 100%;
         }
     }
-

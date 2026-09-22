@@ -66,6 +66,15 @@ export const quests = pgTable('quests', {
   photoUrl: text('photo_url'),
   photoSubmittedAt: timestamp('photo_submitted_at'),
 
+  // Couple Photo Quest: each person keeps their own photo.
+  senderPhotoUrl: text('sender_photo_url'),
+  senderPhotoSubmittedAt: timestamp('sender_photo_submitted_at'),
+  senderPhotoReason: text('sender_photo_reason'),
+
+  receiverPhotoUrl: text('receiver_photo_url'),
+  receiverPhotoSubmittedAt: timestamp('receiver_photo_submitted_at'),
+  receiverPhotoReason: text('receiver_photo_reason'),
+
   requirePhotoReason: boolean('require_photo_reason')
     .notNull()
     .default(false),

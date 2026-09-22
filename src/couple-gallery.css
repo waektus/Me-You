@@ -1,0 +1,194 @@
+/* Couple Photo Quest + Gallery additions */
+
+.couple-photo-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.couple-photo-preview {
+  position: relative;
+  display: block;
+  min-height: 120px;
+  overflow: hidden;
+  border: 1px solid rgba(236, 72, 153, 0.16);
+  border-radius: 16px;
+  background: rgba(253, 242, 248, 0.72);
+  text-decoration: none;
+}
+
+.couple-photo-preview img {
+  display: block;
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+}
+
+.couple-photo-preview > span {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  padding: 5px 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #831843;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+}
+
+.couple-photo-preview.missing {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  padding: 16px;
+  border-style: dashed;
+  color: #9d174d;
+  text-align: center;
+}
+
+.couple-photo-preview.missing > span {
+  position: static;
+  background: transparent;
+  white-space: normal;
+}
+
+.couple-photo-submit {
+  white-space: nowrap;
+}
+
+.gallery-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.couple-gallery-create {
+  min-height: 42px;
+}
+
+.couple-gallery-card {
+  overflow: hidden;
+}
+
+.couple-gallery-images {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  overflow: hidden;
+  background: rgba(253, 242, 248, 0.8);
+}
+
+.couple-gallery-image {
+  position: relative;
+  display: block;
+  min-width: 0;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  background: rgba(253, 242, 248, 0.82);
+  text-decoration: none;
+}
+
+.couple-gallery-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 180ms ease;
+}
+
+.couple-gallery-image:hover img {
+  transform: scale(1.025);
+}
+
+.couple-gallery-image > span {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  padding: 6px 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #831843;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+}
+
+.couple-gallery-image.missing {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  padding: 18px;
+  border: 1px dashed rgba(236, 72, 153, 0.28);
+  color: #9d174d;
+  text-align: center;
+}
+
+.couple-gallery-image.missing > div {
+  margin-bottom: 38px;
+  font-size: 1.7rem;
+}
+
+.couple-gallery-image.missing > span {
+  white-space: normal;
+}
+
+.couple-gallery-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 8px;
+  padding: 5px 9px;
+  border: 1px solid rgba(236, 72, 153, 0.16);
+  border-radius: 999px;
+  background: rgba(253, 242, 248, 0.86);
+  color: #9d174d;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.couple-gallery-reasons {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.couple-gallery-reasons .gallery-reason {
+  margin-top: 0;
+}
+
+@media (max-width: 600px) {
+  .couple-photo-preview-grid {
+    gap: 7px;
+  }
+
+  .couple-photo-preview img,
+  .couple-photo-preview.missing {
+    height: 120px;
+    min-height: 120px;
+  }
+
+  .couple-gallery-image.missing {
+    min-height: 170px;
+  }
+
+  .gallery-empty-actions {
+    flex-direction: column;
+  }
+
+  .gallery-empty-actions > button {
+    width: 100%;
+  }
+}

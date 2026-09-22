@@ -363,35 +363,25 @@ app.post('/api/quests', async (req, res) => {
       receiverId,
     } = req.body
 
-    const cleanSenderId = Number(senderId)
-    const cleanReceiverId = Number(receiverId)
-
-    if (!title || !due || !cleanSenderId || !cleanReceiverId) {
+    if (!title || !due || !senderId || !receiverId) {
       return res.status(400).json({ error: 'ข้อมูลไม่ครบ' })
     }
 
-    if (cleanSenderId === cleanReceiverId) {
-      return res.status(400).json({ error: 'ผู้สร้างและอีกฝ่ายต้องเป็นคนละคน' })
+    if (Number(senderId) === Number(receiverId)) {
+      return res.status(400).json({ error: 'Couple Quest ต้องมีผู้ใช้ 2 คน' })
+    }
+
+    if (verifyType !== 'review' && verifyType !== 'instant') {
+      return res.status(400).json({ error: 'verifyType ไม่ถูกต้อง' })
     }
 
     const cleanQuestMode = questMode === 'couple' ? 'couple' : 'solo'
-    const cleanQuestType =
-      cleanQuestMode === 'couple'
-        ? 'normal'
-        : questType === 'photo'
-          ? 'photo'
-          : 'normal'
-
-    const cleanVerifyType =
-      cleanQuestMode === 'couple'
-        ? 'instant'
-        : verifyType === 'instant'
-          ? 'instant'
-          : 'review'
-
+    const cleanQuestType = questType === 'photo' ? 'photo' : 'normal'
     const defaultIcon =
       cleanQuestMode === 'couple'
-        ? '💞'
+        ? cleanQuestType === 'photo'
+          ? '💞'
+          : '💞'
         : cleanQuestType === 'photo'
           ? '📷'
           : '🎯'
@@ -415,189 +405,39 @@ app.post('/api/quests', async (req, res) => {
         senderCompleted: false,
         receiverCompleted: false,
         requirePhotoReason:
-          cleanQuestMode === 'solo' && cleanQuestType === 'photo'
+          cleanQuestType === 'photo'
             ? Boolean(requirePhotoReason)
             : false,
         due: String(due),
-        points: Math.max(1, Number(points) || 1),
-        verifyType: cleanVerifyType,
+        points: Number(points) || 1,
+        verifyType: cleanQuestMode === 'couple' ? 'instant' : verifyType,
         status: 'pending',
-        senderId: cleanSenderId,
-        receiverId: cleanReceiverId,
+        senderId: Number(senderId),
+        receiverId: Number(receiverId),
       })
       .returning()
 
     const senderName = await getUserName(newQuest.senderId)
-
-    if (newQuest.questMode === 'couple') {
-      void sendPushToUser(newQuest.receiverId, {
-        title: 'มี Couple Quest ใหม่ 💞',
-        body: `${senderName} ชวนคุณทำ “${newQuest.title}” ด้วยกัน`,
-        url: '/',
-      })
-    } else {
-      void sendPushToUser(newQuest.receiverId, {
-        title: 'มีเควสใหม่ 🎯',
-        body: `${senderName} ส่งเควส “${newQuest.title}” ให้คุณ`,
-        url: '/',
-      })
-    }
+    void sendPushToUser(newQuest.receiverId, {
+      title:
+        newQuest.questMode === 'couple'
+          ? newQuest.questType === 'photo'
+            ? 'มี Couple Photo Quest ใหม่ 💞📷'
+            : 'มี Couple Quest ใหม่ 💞'
+          : 'มีเควสใหม่ 🎯',
+      body:
+        newQuest.questMode === 'couple'
+          ? newQuest.questType === 'photo'
+            ? `${senderName} ชวนคุณถ่ายรูปสำหรับ “${newQuest.title}” ด้วยกัน`
+            : `${senderName} ชวนคุณทำ “${newQuest.title}” ด้วยกัน`
+          : `${senderName} ส่งเควส “${newQuest.title}” ให้คุณ`,
+      url: '/',
+    })
 
     return res.status(201).json(newQuest)
   } catch (error) {
     console.error(error)
     return res.status(500).json({ error: 'สร้าง Quest ไม่สำเร็จ' })
-  }
-})
-
-app.patch('/api/quests/:id/couple-complete', async (req, res) => {
-  try {
-    const questId = Number(req.params.id)
-    const userId = Number(req.body.userId)
-
-    if (!Number.isInteger(questId) || questId <= 0) {
-      return res.status(400).json({ error: 'Quest ID ไม่ถูกต้อง' })
-    }
-
-    if (!Number.isInteger(userId) || userId <= 0) {
-      return res.status(400).json({ error: 'User ID ไม่ถูกต้อง' })
-    }
-
-    const [quest] = await db
-      .select()
-      .from(quests)
-      .where(eq(quests.id, questId))
-      .limit(1)
-
-    if (!quest) {
-      return res.status(404).json({ error: 'ไม่พบ Quest' })
-    }
-
-    if (quest.questMode !== 'couple') {
-      return res.status(400).json({ error: 'Quest นี้ไม่ใช่ Couple Quest' })
-    }
-
-    if (quest.status !== 'pending') {
-      return res.status(409).json({ error: 'Couple Quest นี้จบแล้ว' })
-    }
-
-    const isSender = quest.senderId === userId
-    const isReceiver = quest.receiverId === userId
-
-    if (!isSender && !isReceiver) {
-      return res.status(403).json({ error: 'คุณไม่ได้อยู่ใน Couple Quest นี้' })
-    }
-
-    const result = await db.transaction(async (tx) => {
-      const [progressedQuest] = isSender
-        ? await tx
-            .update(quests)
-            .set({ senderCompleted: true })
-            .where(
-              and(
-                eq(quests.id, questId),
-                eq(quests.status, 'pending'),
-                eq(quests.senderId, userId),
-                eq(quests.senderCompleted, false),
-              ),
-            )
-            .returning()
-        : await tx
-            .update(quests)
-            .set({ receiverCompleted: true })
-            .where(
-              and(
-                eq(quests.id, questId),
-                eq(quests.status, 'pending'),
-                eq(quests.receiverId, userId),
-                eq(quests.receiverCompleted, false),
-              ),
-            )
-            .returning()
-
-      if (!progressedQuest) {
-        throw new Error('ALREADY_CONFIRMED')
-      }
-
-      if (!progressedQuest.senderCompleted || !progressedQuest.receiverCompleted) {
-        return {
-          quest: progressedQuest,
-          completed: false,
-        }
-      }
-
-      const [completedQuest] = await tx
-        .update(quests)
-        .set({ status: 'completed' })
-        .where(
-          and(
-            eq(quests.id, questId),
-            eq(quests.status, 'pending'),
-            eq(quests.senderCompleted, true),
-            eq(quests.receiverCompleted, true),
-          ),
-        )
-        .returning()
-
-      if (!completedQuest) {
-        return {
-          quest: progressedQuest,
-          completed: false,
-        }
-      }
-
-      await tx
-        .update(users)
-        .set({
-          stars: sql`${users.stars} + ${quest.points}`,
-        })
-        .where(eq(users.id, quest.senderId))
-
-      await tx
-        .update(users)
-        .set({
-          stars: sql`${users.stars} + ${quest.points}`,
-        })
-        .where(eq(users.id, quest.receiverId))
-
-      return {
-        quest: completedQuest,
-        completed: true,
-      }
-    })
-
-    const actorName = await getUserName(userId)
-    const otherUserId = isSender ? quest.receiverId : quest.senderId
-
-    if (result.completed) {
-      void sendPushToUser(quest.senderId, {
-        title: 'Couple Quest สำเร็จแล้ว 💞⭐',
-        body: `“${quest.title}” สำเร็จแล้ว ทั้งคู่ได้รับ ${quest.points} ดาว`,
-        url: '/',
-      })
-
-      void sendPushToUser(quest.receiverId, {
-        title: 'Couple Quest สำเร็จแล้ว 💞⭐',
-        body: `“${quest.title}” สำเร็จแล้ว ทั้งคู่ได้รับ ${quest.points} ดาว`,
-        url: '/',
-      })
-    } else {
-      void sendPushToUser(otherUserId, {
-        title: 'อีกฝ่ายทำ Couple Quest แล้ว 💞',
-        body: `${actorName} ทำส่วนของ “${quest.title}” แล้ว เหลือคุณอีกคนนะ`,
-        url: '/',
-      })
-    }
-
-    return res.json(result)
-  } catch (error) {
-    console.error(error)
-
-    if (error instanceof Error && error.message === 'ALREADY_CONFIRMED') {
-      return res.status(409).json({ error: 'คุณกดยืนยัน Couple Quest นี้แล้ว' })
-    }
-
-    return res.status(500).json({ error: 'ยืนยัน Couple Quest ไม่สำเร็จ' })
   }
 })
 
@@ -620,7 +460,9 @@ app.patch('/api/quests/:id/complete', async (req, res) => {
     }
 
     if (quest.questMode === 'couple') {
-      return res.status(400).json({ error: 'Couple Quest ต้องยืนยันแยกของแต่ละคน' })
+      return res.status(400).json({
+        error: 'Couple Quest ต้องใช้การยืนยันของแต่ละคน',
+      })
     }
 
     if (quest.questType === 'photo') {
@@ -702,6 +544,434 @@ app.patch('/api/quests/:id/complete', async (req, res) => {
   }
 })
 
+
+app.patch('/api/quests/:id/couple-complete', async (req, res) => {
+  try {
+    const questId = Number(req.params.id)
+    const userId = Number(req.body.userId)
+
+    if (!Number.isInteger(questId) || questId <= 0) {
+      return res.status(400).json({ error: 'Quest ID ไม่ถูกต้อง' })
+    }
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ error: 'User ID ไม่ถูกต้อง' })
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [quest] = await tx
+        .select()
+        .from(quests)
+        .where(eq(quests.id, questId))
+        .limit(1)
+
+      if (!quest) {
+        throw new Error('QUEST_NOT_FOUND')
+      }
+
+      if (quest.questMode !== 'couple') {
+        throw new Error('NOT_COUPLE_QUEST')
+      }
+
+      if (quest.questType === 'photo') {
+        throw new Error('PHOTO_REQUIRED')
+      }
+
+      if (quest.status !== 'pending') {
+        throw new Error('COUPLE_QUEST_FINISHED')
+      }
+
+      const isSender = quest.senderId === userId
+      const isReceiver = quest.receiverId === userId
+
+      if (!isSender && !isReceiver) {
+        throw new Error('NOT_PARTICIPANT')
+      }
+
+      if (
+        (isSender && quest.senderCompleted) ||
+        (isReceiver && quest.receiverCompleted)
+      ) {
+        throw new Error('ALREADY_CONFIRMED')
+      }
+
+      const completionColumn = isSender
+        ? quests.senderCompleted
+        : quests.receiverCompleted
+
+      const [updatedQuest] = await tx
+        .update(quests)
+        .set(
+          isSender
+            ? { senderCompleted: true }
+            : { receiverCompleted: true },
+        )
+        .where(
+          and(
+            eq(quests.id, questId),
+            eq(quests.status, 'pending'),
+            eq(completionColumn, false),
+          ),
+        )
+        .returning()
+
+      if (!updatedQuest) {
+        throw new Error('ALREADY_CONFIRMED')
+      }
+
+      if (!updatedQuest.senderCompleted || !updatedQuest.receiverCompleted) {
+        return {
+          quest: updatedQuest,
+          completedNow: false,
+        }
+      }
+
+      const [completedQuest] = await tx
+        .update(quests)
+        .set({ status: 'completed' })
+        .where(
+          and(
+            eq(quests.id, questId),
+            eq(quests.status, 'pending'),
+            eq(quests.senderCompleted, true),
+            eq(quests.receiverCompleted, true),
+          ),
+        )
+        .returning()
+
+      if (!completedQuest) {
+        return {
+          quest: updatedQuest,
+          completedNow: false,
+        }
+      }
+
+      await tx
+        .update(users)
+        .set({
+          stars: sql`${users.stars} + ${quest.points}`,
+        })
+        .where(eq(users.id, quest.senderId))
+
+      await tx
+        .update(users)
+        .set({
+          stars: sql`${users.stars} + ${quest.points}`,
+        })
+        .where(eq(users.id, quest.receiverId))
+
+      return {
+        quest: completedQuest,
+        completedNow: true,
+      }
+    })
+
+    const actorName = await getUserName(userId)
+
+    if (result.completedNow) {
+      const message = {
+        title: 'Couple Quest สำเร็จแล้ว 💞⭐',
+        body: `“${result.quest.title}” สำเร็จแล้ว ทั้งคู่ได้รับ ${result.quest.points} ดาว`,
+        url: '/',
+      }
+
+      void sendPushToUser(result.quest.senderId, message)
+
+      if (result.quest.receiverId !== result.quest.senderId) {
+        void sendPushToUser(result.quest.receiverId, message)
+      }
+    } else {
+      const otherUserId =
+        result.quest.senderId === userId
+          ? result.quest.receiverId
+          : result.quest.senderId
+
+      void sendPushToUser(otherUserId, {
+        title: 'อีกฝ่ายทำส่วนของตัวเองแล้ว 💞',
+        body: `${actorName} ยืนยัน “${result.quest.title}” แล้ว เหลือคุณอีกคนนะ`,
+        url: '/',
+      })
+    }
+
+    return res.json({
+      quest: result.quest,
+      completed: result.completedNow,
+    })
+  } catch (error) {
+    console.error(error)
+
+    if (error instanceof Error) {
+      if (error.message === 'QUEST_NOT_FOUND') {
+        return res.status(404).json({ error: 'ไม่พบ Quest' })
+      }
+
+      if (error.message === 'NOT_COUPLE_QUEST') {
+        return res.status(400).json({ error: 'Quest นี้ไม่ใช่ Couple Quest' })
+      }
+
+      if (error.message === 'NOT_PARTICIPANT') {
+        return res.status(403).json({ error: 'คุณไม่ได้อยู่ใน Couple Quest นี้' })
+      }
+
+      if (error.message === 'PHOTO_REQUIRED') {
+        return res.status(400).json({
+          error: 'Couple Photo Quest ต้องส่งรูปของตัวเอง',
+        })
+      }
+
+      if (error.message === 'ALREADY_CONFIRMED') {
+        return res.status(409).json({ error: 'คุณยืนยันเควสนี้แล้ว' })
+      }
+
+      if (error.message === 'COUPLE_QUEST_FINISHED') {
+        return res.status(409).json({ error: 'Couple Quest นี้จบแล้ว' })
+      }
+    }
+
+    return res.status(500).json({ error: 'ยืนยัน Couple Quest ไม่สำเร็จ' })
+  }
+})
+
+app.post(
+  '/api/quests/:id/couple-photo',
+  upload.single('photo'),
+  async (req, res) => {
+    let uploadedPath: string | null = null
+
+    try {
+      const questId = Number(req.params.id)
+      const userId = Number(req.body.userId)
+
+      if (!Number.isInteger(questId) || questId <= 0) {
+        return res.status(400).json({ error: 'Quest ID ไม่ถูกต้อง' })
+      }
+
+      if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).json({ error: 'User ID ไม่ถูกต้อง' })
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'ไม่พบรูปภาพ' })
+      }
+
+      if (!supabase) {
+        return res.status(500).json({
+          error: 'ยังไม่ได้ตั้งค่า Supabase Storage บนเซิร์ฟเวอร์',
+        })
+      }
+
+      const [quest] = await db
+        .select()
+        .from(quests)
+        .where(eq(quests.id, questId))
+        .limit(1)
+
+      if (!quest) {
+        return res.status(404).json({ error: 'ไม่พบ Quest' })
+      }
+
+      if (quest.questMode !== 'couple' || quest.questType !== 'photo') {
+        return res.status(400).json({
+          error: 'Quest นี้ไม่ใช่ Couple Photo Quest',
+        })
+      }
+
+      if (quest.status !== 'pending') {
+        return res.status(409).json({ error: 'Couple Photo Quest นี้จบแล้ว' })
+      }
+
+      const isSender = quest.senderId === userId
+      const isReceiver = quest.receiverId === userId
+
+      if (!isSender && !isReceiver) {
+        return res.status(403).json({
+          error: 'คุณไม่ได้อยู่ใน Couple Quest นี้',
+        })
+      }
+
+      if (
+        (isSender && quest.senderCompleted) ||
+        (isReceiver && quest.receiverCompleted)
+      ) {
+        return res.status(409).json({ error: 'คุณส่งรูปสำหรับเควสนี้แล้ว' })
+      }
+
+      const photoReason =
+        typeof req.body.photoReason === 'string'
+          ? req.body.photoReason.trim()
+          : ''
+
+      if (quest.requirePhotoReason && !photoReason) {
+        return res.status(400).json({
+          error: 'เควสนี้ต้องอธิบายเหตุผลที่ถ่าย',
+        })
+      }
+
+      if (photoReason.length > 300) {
+        return res.status(400).json({
+          error: 'เหตุผลต้องไม่เกิน 300 ตัวอักษร',
+        })
+      }
+
+      const extension = getImageExtension(req.file)
+      uploadedPath =
+        `quests/${quest.id}/couple/${userId}/${Date.now()}-${randomUUID()}.${extension}`
+
+      const { error: uploadError } = await supabase.storage
+        .from(SUPABASE_STORAGE_BUCKET)
+        .upload(uploadedPath, req.file.buffer, {
+          contentType: req.file.mimetype,
+          cacheControl: '3600',
+          upsert: false,
+        })
+
+      if (uploadError) {
+        console.error('Supabase Storage couple photo upload failed', uploadError)
+        return res.status(500).json({
+          error: 'อัปโหลดรูปขึ้น Storage ไม่สำเร็จ',
+        })
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from(SUPABASE_STORAGE_BUCKET)
+        .getPublicUrl(uploadedPath)
+
+      const photoUrl = publicUrlData.publicUrl
+      const submittedAt = new Date()
+
+      const result = await db.transaction(async (tx) => {
+        const completionColumn = isSender
+          ? quests.senderCompleted
+          : quests.receiverCompleted
+
+        const updateValues = isSender
+          ? {
+              senderCompleted: true,
+              senderPhotoUrl: photoUrl,
+              senderPhotoSubmittedAt: submittedAt,
+              senderPhotoReason: photoReason || null,
+            }
+          : {
+              receiverCompleted: true,
+              receiverPhotoUrl: photoUrl,
+              receiverPhotoSubmittedAt: submittedAt,
+              receiverPhotoReason: photoReason || null,
+            }
+
+        const [updatedQuest] = await tx
+          .update(quests)
+          .set(updateValues)
+          .where(
+            and(
+              eq(quests.id, questId),
+              eq(quests.status, 'pending'),
+              eq(completionColumn, false),
+            ),
+          )
+          .returning()
+
+        if (!updatedQuest) {
+          throw new Error('ALREADY_SUBMITTED')
+        }
+
+        if (!updatedQuest.senderCompleted || !updatedQuest.receiverCompleted) {
+          return {
+            quest: updatedQuest,
+            completedNow: false,
+          }
+        }
+
+        const [completedQuest] = await tx
+          .update(quests)
+          .set({ status: 'completed' })
+          .where(
+            and(
+              eq(quests.id, questId),
+              eq(quests.status, 'pending'),
+              eq(quests.senderCompleted, true),
+              eq(quests.receiverCompleted, true),
+            ),
+          )
+          .returning()
+
+        if (!completedQuest) {
+          return {
+            quest: updatedQuest,
+            completedNow: false,
+          }
+        }
+
+        await tx
+          .update(users)
+          .set({
+            stars: sql`${users.stars} + ${quest.points}`,
+          })
+          .where(eq(users.id, quest.senderId))
+
+        await tx
+          .update(users)
+          .set({
+            stars: sql`${users.stars} + ${quest.points}`,
+          })
+          .where(eq(users.id, quest.receiverId))
+
+        return {
+          quest: completedQuest,
+          completedNow: true,
+        }
+      })
+
+      uploadedPath = null
+
+      const actorName = await getUserName(userId)
+
+      if (result.completedNow) {
+        const message = {
+          title: 'Couple Photo Quest สำเร็จแล้ว 💞📷⭐',
+          body: `รูปของ “${result.quest.title}” ครบทั้งคู่แล้ว ได้รับคนละ ${result.quest.points} ดาว`,
+          url: '/',
+        }
+
+        void sendPushToUser(result.quest.senderId, message)
+
+        if (result.quest.receiverId !== result.quest.senderId) {
+          void sendPushToUser(result.quest.receiverId, message)
+        }
+      } else {
+        const otherUserId =
+          result.quest.senderId === userId
+            ? result.quest.receiverId
+            : result.quest.senderId
+
+        void sendPushToUser(otherUserId, {
+          title: 'อีกฝ่ายส่งรูปแล้ว 💞📷',
+          body: `${actorName} ส่งรูปสำหรับ “${result.quest.title}” แล้ว เหลือรูปของคุณนะ`,
+          url: '/',
+        })
+      }
+
+      return res.json({
+        quest: result.quest,
+        completed: result.completedNow,
+      })
+    } catch (error) {
+      console.error(error)
+
+      if (uploadedPath) {
+        await deleteStoredPhoto(uploadedPath)
+      }
+
+      if (error instanceof Error && error.message === 'ALREADY_SUBMITTED') {
+        return res.status(409).json({ error: 'คุณส่งรูปสำหรับเควสนี้แล้ว' })
+      }
+
+      return res.status(500).json({
+        error: 'ส่งรูป Couple Photo Quest ไม่สำเร็จ',
+      })
+    }
+  },
+)
+
 app.post(
   '/api/quests/:id/photo',
   upload.single('photo'),
@@ -736,7 +1006,9 @@ app.post(
       }
 
       if (quest.questMode === 'couple') {
-        return res.status(400).json({ error: 'Couple Quest ยังไม่รองรับการส่งรูป' })
+        return res.status(400).json({
+          error: 'Couple Quest ไม่ใช้การส่งรูปในโหมดนี้',
+        })
       }
 
       if (quest.questType !== 'photo') {
@@ -898,7 +1170,9 @@ app.patch('/api/quests/:id/approve', async (req, res) => {
     }
 
     if (quest.questMode === 'couple') {
-      return res.status(400).json({ error: 'Couple Quest ไม่ต้องให้อีกฝ่ายอนุมัติ' })
+      return res.status(400).json({
+        error: 'Couple Quest ไม่ต้องให้อีกฝ่ายอนุมัติ',
+      })
     }
 
     if (quest.status !== 'review') {
