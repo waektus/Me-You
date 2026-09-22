@@ -1019,7 +1019,7 @@ export default function App() {
                               className="action couple-action"
                               onClick={() => void completeCoupleQuest(quest)}
                             >
-                              💞 ฉันทำแล้ว
+                              💞 ทำแล้วน้าาาา
                             </button>
                           )
                         )}
@@ -1351,7 +1351,7 @@ export default function App() {
 
             {questMode === 'couple' && (
               <div className="couple-create-note">
-                <strong>💞 ทั้งคู่ต้องกด “ฉันทำแล้ว”</strong>
+                <strong>💞 ทั้งคู่ต้องกด “ทำแล้วน้าาาา”</strong>
                 <small>เมื่อครบทั้งสองคน จะได้รับ {points} ดาวต่อคนอัตโนมัติ</small>
               </div>
             )}
