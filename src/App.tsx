@@ -597,14 +597,14 @@ export default function App() {
 
       if (!videoId) return ''
 
-      return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`
+      return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/mqdefault.jpg`
     } catch {
       return ''
     }
   }
 
   function getSongCover(song: Song) {
-    return song.coverUrl || getYouTubeCoverFromUrl(song.url)
+    return getYouTubeCoverFromUrl(song.url) || song.coverUrl || ''
   }
 
   function showToast(message: string) {
@@ -1560,8 +1560,7 @@ export default function App() {
               <div className="eyebrow">Our memories</div>
               <h1>Gallery ของเรา</h1>
               <p>
-                รูปจาก Photo Quest และ Couple Photo Quest จะถูกรวมไว้ที่นี่
-                แยกตามแต่ละวัน
+                รูปจาก Photo Quest และ Couple Photo Quest จะถูกรวมไว้ที่นี่แยกตามแต่ละวัน
               </p>
             </section>
 
@@ -1865,8 +1864,16 @@ export default function App() {
                       {getSongCover(song) ? (
                         <img
                           src={getSongCover(song)}
-                          alt=""
+                          alt={song.title}
                           onError={(event) => {
+                            if (
+                              song.coverUrl &&
+                              event.currentTarget.src !== song.coverUrl
+                            ) {
+                              event.currentTarget.src = song.coverUrl
+                              return
+                            }
+
                             event.currentTarget.style.display = 'none'
                           }}
                         />
