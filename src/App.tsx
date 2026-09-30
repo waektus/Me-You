@@ -2663,7 +2663,7 @@ export default function App() {
                 id="reward"
                 rows={4}
                 maxLength={200}
-                placeholder="เช่น อยากให้โรลย์เพลย์เป็นเป็ดน่ารัก"
+                placeholder="เช่น อยากให้... something ผมคิดไม่ออกแหะ ๆ"
                 value={rewardText}
                 autoFocus
                 disabled={redeeming}
