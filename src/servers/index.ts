@@ -362,6 +362,99 @@ app.post('/api/artworks', upload.single('image'), async (req, res) => {
   }
 })
 
+
+function isHttpUrl(value: string) {
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function getYouTubeVideoId(value: string) {
+  try {
+    const url = new URL(value)
+    const host = url.hostname.replace(/^www\./, '').toLowerCase()
+
+    if (host === 'youtu.be') {
+      return url.pathname.split('/').filter(Boolean)[0] ?? null
+    }
+
+    if (
+      host === 'youtube.com' ||
+      host === 'm.youtube.com' ||
+      host === 'music.youtube.com'
+    ) {
+      const fromQuery = url.searchParams.get('v')
+      if (fromQuery) return fromQuery
+
+      const parts = url.pathname.split('/').filter(Boolean)
+
+      if (parts[0] === 'shorts' || parts[0] === 'embed') {
+        return parts[1] ?? null
+      }
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
+async function getAutomaticSongCover(songUrl: string) {
+  try {
+    const url = new URL(songUrl)
+    const host = url.hostname.replace(/^www\./, '').toLowerCase()
+
+    const youtubeId = getYouTubeVideoId(songUrl)
+
+    if (youtubeId) {
+      return `https://i.ytimg.com/vi/${encodeURIComponent(youtubeId)}/hqdefault.jpg`
+    }
+
+    if (host === 'open.spotify.com') {
+      const response = await fetch(
+        `https://open.spotify.com/oembed?url=${encodeURIComponent(songUrl)}`,
+        {
+          headers: {
+            accept: 'application/json',
+          },
+        },
+      )
+
+      if (!response.ok) return null
+
+      const data = (await response.json()) as {
+        thumbnail_url?: unknown
+      }
+
+      return typeof data.thumbnail_url === 'string' && data.thumbnail_url
+        ? data.thumbnail_url
+        : null
+    }
+
+    return null
+  } catch (error) {
+    console.error('automatic song cover failed', error)
+    return null
+  }
+}
+
+app.get('/api/songs/cover', async (req, res) => {
+  const url = typeof req.query.url === 'string' ? req.query.url.trim() : ''
+
+  if (!url || !isHttpUrl(url)) {
+    return res.status(400).json({ error: 'ลิงก์เพลงไม่ถูกต้อง' })
+  }
+
+  const coverUrl = await getAutomaticSongCover(url)
+
+  return res.json({
+    coverUrl,
+  })
+})
+
 app.get('/api/songs', async (_req, res) => {
   try {
     const data = await db
@@ -369,10 +462,41 @@ app.get('/api/songs', async (_req, res) => {
       .from(songs)
       .orderBy(desc(songs.createdAt))
 
-    res.json(data)
+    // เพลงเก่าที่สร้างก่อนมีระบบ Auto Cover อาจมี coverUrl = null
+    // ดึงปกย้อนหลังให้ และบันทึกกลับฐานข้อมูลครั้งเดียว
+    const songsWithCovers = await Promise.all(
+      data.map(async (song) => {
+        if (song.coverUrl) {
+          return song
+        }
+
+        const coverUrl = await getAutomaticSongCover(song.url)
+
+        if (!coverUrl) {
+          return song
+        }
+
+        try {
+          await db
+            .update(songs)
+            .set({ coverUrl })
+            .where(eq(songs.id, song.id))
+        } catch (error) {
+          // ต่อให้บันทึกย้อนหลังไม่ได้ ก็ยังส่ง URL ปกให้หน้าเว็บใช้รอบนี้ได้
+          console.error(`save song cover failed: ${song.id}`, error)
+        }
+
+        return {
+          ...song,
+          coverUrl,
+        }
+      }),
+    )
+
+    return res.json(songsWithCovers)
   } catch (error) {
     console.error(error)
-    res.status(500).json({ error: 'โหลดห้องเพลงไม่สำเร็จ' })
+    return res.status(500).json({ error: 'โหลดห้องเพลงไม่สำเร็จ' })
   }
 })
 
@@ -383,8 +507,6 @@ app.post('/api/songs', async (req, res) => {
     const artist =
       typeof req.body.artist === 'string' ? req.body.artist.trim() : ''
     const url = typeof req.body.url === 'string' ? req.body.url.trim() : ''
-    const coverUrl =
-      typeof req.body.coverUrl === 'string' ? req.body.coverUrl.trim() : ''
     const message =
       typeof req.body.message === 'string' ? req.body.message.trim() : ''
 
@@ -408,22 +530,11 @@ app.post('/api/songs', async (req, res) => {
       return res.status(400).json({ error: 'ข้อความต้องไม่เกิน 500 ตัวอักษร' })
     }
 
-    const isHttpUrl = (value: string) => {
-      try {
-        const parsed = new URL(value)
-        return parsed.protocol === 'http:' || parsed.protocol === 'https:'
-      } catch {
-        return false
-      }
-    }
-
     if (!isHttpUrl(url)) {
       return res.status(400).json({ error: 'ลิงก์เพลงไม่ถูกต้อง' })
     }
 
-    if (coverUrl && !isHttpUrl(coverUrl)) {
-      return res.status(400).json({ error: 'ลิงก์รูปปกไม่ถูกต้อง' })
-    }
+    const coverUrl = await getAutomaticSongCover(url)
 
     const [user] = await db
       .select({ id: users.id, name: users.name })

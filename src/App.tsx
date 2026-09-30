@@ -186,7 +186,8 @@ export default function App() {
   const [songTitle, setSongTitle] = useState('')
   const [songArtist, setSongArtist] = useState('')
   const [songUrl, setSongUrl] = useState('')
-  const [songCoverUrl, setSongCoverUrl] = useState('')
+  const [songCoverPreview, setSongCoverPreview] = useState('')
+  const [songCoverLoading, setSongCoverLoading] = useState(false)
   const [songMessage, setSongMessage] = useState('')
   const [savingSong, setSavingSong] = useState(false)
 
@@ -363,6 +364,56 @@ export default function App() {
       URL.revokeObjectURL(objectUrl)
     }
   }, [artFile])
+
+  useEffect(() => {
+    const url = songUrl.trim()
+
+    if (!url) {
+      setSongCoverPreview('')
+      setSongCoverLoading(false)
+      return
+    }
+
+    let active = true
+
+    const timer = window.setTimeout(async () => {
+      try {
+        setSongCoverLoading(true)
+
+        const response = await fetch(
+          `${API}/songs/cover?url=${encodeURIComponent(url)}`,
+        )
+
+        const data = await response.json().catch(() => null)
+
+        if (!active) return
+
+        if (!response.ok) {
+          setSongCoverPreview('')
+          return
+        }
+
+        setSongCoverPreview(
+          typeof data?.coverUrl === 'string' ? data.coverUrl : '',
+        )
+      } catch (error) {
+        console.error('โหลดปกเพลงไม่สำเร็จ', error)
+
+        if (active) {
+          setSongCoverPreview('')
+        }
+      } finally {
+        if (active) {
+          setSongCoverLoading(false)
+        }
+      }
+    }, 550)
+
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [songUrl])
 
   const filteredQuests = useMemo(() => {
     if (currentUserId === null) return []
@@ -590,7 +641,7 @@ export default function App() {
     setSongTitle('')
     setSongArtist('')
     setSongUrl('')
-    setSongCoverUrl('')
+    setSongCoverPreview('')
     setSongMessage('')
   }
 
@@ -650,7 +701,6 @@ export default function App() {
           title: songTitle.trim(),
           artist: songArtist.trim(),
           url: songUrl.trim(),
-          coverUrl: songCoverUrl.trim(),
           message: songMessage.trim(),
           userId: currentUser.id,
         }),
@@ -667,7 +717,7 @@ export default function App() {
       setSongTitle('')
       setSongArtist('')
       setSongUrl('')
-      setSongCoverUrl('')
+      setSongCoverPreview('')
       setSongMessage('')
       showToast('เอาเพลงมาเก็บไว้แล้วว 🎵')
     } catch (error) {
@@ -1669,7 +1719,7 @@ export default function App() {
               <div>
                 <div className="eyebrow">Our little museum</div>
                 <h1>หอศิลป์ของเราสองคน</h1>
-                <p>เอารูปมาแขวนไว้ตรงนี้ซะ ≽^•༚• ྀི≼</p>
+                <p>เอารูปที่ชอบมาแขวนไว้ตรงนี้ จะได้ไม่หายไปไหน q(≧▽≦q)</p>
               </div>
 
               <button
@@ -1684,8 +1734,8 @@ export default function App() {
             {artworks.length === 0 ? (
               <section className="collection-empty">
                 <div className="collection-empty-icon">🖼️</div>
-                <h2>โห...ยังไม่มีอะไรแขวนเลย</h2>
-                <p>หารูปน่ารัก ๆ มาแปะเป็นรูปแรกกัน</p>
+                <h2>โห..โบ๋เบ๋เลยแบบนี้จะต้อง</h2>
+                <p>หารูปน่ารัก ๆ มาแปะเป็นรูปแรกกันเถอะน้าาา</p>
                 <button
                   type="button"
                   className="primary"
@@ -1739,7 +1789,7 @@ export default function App() {
               <div>
                 <div className="eyebrow">Songs we keep</div>
                 <h1>ห้องเก็บเพลงของเราสองคน</h1>
-                <p>เพลงก็เอามาเก็บไว้ตรงนี้เลยยนะ /•᷅‎‎•᷄\੭</p>
+                <p>เพลงไหนฟังแล้วนึกถึงกัน เอามาเก็บไว้ตรงนี้เลยย 🎧</p>
               </div>
 
               <button
@@ -1755,7 +1805,7 @@ export default function App() {
               <section className="collection-empty">
                 <div className="collection-empty-icon">🎧</div>
                 <h2>ห้องนี้ยังเงียบอยู่เลยย</h2>
-                <p>หาเพลงแรกมาเปิดห้องกันเถอะ</p>
+                <p>หาเพลงแรกมาเปิดห้องกันเถอะน้าาา</p>
                 <button
                   type="button"
                   className="primary"
@@ -2372,7 +2422,7 @@ export default function App() {
                 id="artTitle"
                 required
                 maxLength={100}
-                placeholder="เช่น ภาพเป็ดน่ารักๆ"
+                placeholder="เช่น เป็ดน่ารัก"
                 value={artTitle}
                 disabled={savingArtwork}
                 onChange={(event) => setArtTitle(event.target.value)}
@@ -2385,7 +2435,7 @@ export default function App() {
                 id="artDescription"
                 rows={3}
                 maxLength={500}
-                placeholder="เช่น น่ารักจนอยากกิน"
+                placeholder="เช่น เค้ารักเธอ"
                 value={artDescription}
                 disabled={savingArtwork}
                 onChange={(event) => setArtDescription(event.target.value)}
@@ -2483,25 +2533,19 @@ export default function App() {
               />
             </div>
 
-            <div className="field">
-              <label htmlFor="songCoverUrl">ลิงก์รูปปก (ไม่ใส่ก็ได้)</label>
-              <input
-                id="songCoverUrl"
-                type="url"
-                placeholder="https://..."
-                value={songCoverUrl}
-                disabled={savingSong}
-                onChange={(event) => setSongCoverUrl(event.target.value)}
-              />
-            </div>
+            {songCoverPreview && (
+              <div className="song-cover-silent-preview">
+                <img src={songCoverPreview} alt="ปกเพลง" />
+              </div>
+            )}
 
             <div className="field">
-              <label htmlFor="songMessage">เขียนข้อความได้น้าา</label>
+              <label htmlFor="songMessage">เขียนข้อความตรงนี้เลยย</label>
               <textarea
                 id="songMessage"
                 rows={3}
                 maxLength={500}
-                placeholder="เช่น อันนี้เพราะมากแชร์ ๆ อิอิ"
+                placeholder="เช่น เพลงนี้เพราะมากเลยนะแชร์ ๆ"
                 value={songMessage}
                 disabled={savingSong}
                 onChange={(event) => setSongMessage(event.target.value)}
