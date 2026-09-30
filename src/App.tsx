@@ -187,7 +187,7 @@ export default function App() {
   const [songArtist, setSongArtist] = useState('')
   const [songUrl, setSongUrl] = useState('')
   const [songCoverPreview, setSongCoverPreview] = useState('')
-  const [songCoverLoading, setSongCoverLoading] = useState(false)
+  const [, setSongCoverLoading] = useState(false)
   const [songMessage, setSongMessage] = useState('')
   const [savingSong, setSavingSong] = useState(false)
 
@@ -568,6 +568,43 @@ export default function App() {
     }
 
     return `${API_ORIGIN}${url}`
+  }
+
+  function getYouTubeCoverFromUrl(value: string) {
+    try {
+      const parsed = new URL(value)
+      const host = parsed.hostname.replace(/^www\./, '').toLowerCase()
+
+      let videoId = ''
+
+      if (host === 'youtu.be') {
+        videoId = parsed.pathname.split('/').filter(Boolean)[0] ?? ''
+      } else if (
+        host === 'youtube.com' ||
+        host === 'm.youtube.com' ||
+        host === 'music.youtube.com'
+      ) {
+        videoId = parsed.searchParams.get('v') ?? ''
+
+        if (!videoId) {
+          const parts = parsed.pathname.split('/').filter(Boolean)
+
+          if (parts[0] === 'shorts' || parts[0] === 'embed') {
+            videoId = parts[1] ?? ''
+          }
+        }
+      }
+
+      if (!videoId) return ''
+
+      return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`
+    } catch {
+      return ''
+    }
+  }
+
+  function getSongCover(song: Song) {
+    return song.coverUrl || getYouTubeCoverFromUrl(song.url)
   }
 
   function showToast(message: string) {
@@ -1825,8 +1862,14 @@ export default function App() {
                       rel="noreferrer"
                       aria-label={`เปิดเพลง ${song.title}`}
                     >
-                      {song.coverUrl ? (
-                        <img src={song.coverUrl} alt="" />
+                      {getSongCover(song) ? (
+                        <img
+                          src={getSongCover(song)}
+                          alt=""
+                          onError={(event) => {
+                            event.currentTarget.style.display = 'none'
+                          }}
+                        />
                       ) : (
                         <span>♫</span>
                       )}
