@@ -18,23 +18,23 @@
   position: relative;
   overflow: hidden;
   display: grid;
-  grid-template-columns: 108px minmax(0,1fr);
+  grid-template-columns: 108px minmax(0, 1fr);
   gap: 18px;
   align-items: center;
   min-height: 136px;
   padding: 14px;
   border: 1px solid var(--line, #e7e9ef);
   border-radius: 22px;
-  background: linear-gradient(110deg, rgba(78,105,224,.035), transparent 45%), var(--card, #fff);
-  box-shadow: 0 12px 32px rgba(31,42,68,.055);
+  background: linear-gradient(110deg, rgba(78, 105, 224, .035), transparent 45%), var(--card, #fff);
+  box-shadow: 0 12px 32px rgba(31, 42, 68, .055);
   transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
 }
 
 
 .music-card:hover {
   transform: translateY(-3px);
-  border-color: rgba(83,103,211,.22);
-  box-shadow: 0 20px 46px rgba(31,42,68,.10);
+  border-color: rgba(83, 103, 211, .22);
+  box-shadow: 0 20px 46px rgba(31, 42, 68, .10);
 }
 
 
@@ -48,25 +48,24 @@
   border-radius: 18px;
   text-decoration: none;
   background: radial-gradient(circle at 28% 22%, rgba(11, 14, 241, 0.32), transparent 24%), linear-gradient(145deg, #4656d1, #127fe6);
-  box-shadow: 0 10px 26px rgba(60,70,120,.18);
+  box-shadow: 0 10px 26px rgba(60, 70, 120, .18);
   transition: transform .25s ease, box-shadow .25s ease;
 }
 
 .music-card:hover .music-cover {
-  box-shadow: 0 14px 30px rgba(60,70,120,.24);
+  box-shadow: 0 14px 30px rgba(60, 70, 120, .24);
 }
 
 .music-cover img {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
 }
 
-.music-cover > span {
+.music-cover>span {
   font-size: 2.3rem;
   color: white;
-  filter: drop-shadow(0 4px 10px rgba(0,0,0,.18));
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .18));
 }
 
 .music-card-body {
@@ -84,7 +83,9 @@
   gap: 16px;
 }
 
-.music-card-heading > div { min-width: 0; }
+.music-card-heading>div {
+  min-width: 0;
+}
 
 .music-card-heading h2 {
   margin: 0 0 3px;
@@ -108,9 +109,9 @@
   justify-content: center;
   min-height: 35px;
   padding: 7px 12px;
-  border: 1px solid rgba(74,92,194,.16);
+  border: 1px solid rgba(74, 92, 194, .16);
   border-radius: 999px;
-  background: rgba(75,93,198,.07);
+  background: rgba(75, 93, 198, .07);
   color: #4659b6;
   text-decoration: none;
   font-size: .78rem;
@@ -120,17 +121,17 @@
 
 .music-open:hover {
   transform: translateY(-1px);
-  border-color: rgba(74,92,194,.28);
-  background: rgba(75,93,198,.11);
+  border-color: rgba(74, 92, 194, .28);
+  background: rgba(75, 93, 198, .11);
 }
 
 .music-message {
   position: relative;
   margin: 13px 0 0;
   padding: 10px 13px 10px 13px;
-  border: 1px solid rgba(88,102,190,.10);
+  border: 1px solid rgba(88, 102, 190, .10);
   border-radius: 13px;
-  background: rgba(84,102,205,.045);
+  background: rgba(84, 102, 205, .045);
   color: #555c6d;
   line-height: 1.6;
   font-size: .88rem;
@@ -149,7 +150,7 @@
 
 @media (max-width: 620px) {
   .music-card {
-    grid-template-columns: 78px minmax(0,1fr);
+    grid-template-columns: 78px minmax(0, 1fr);
     gap: 12px;
     min-height: 108px;
     padding: 11px;
@@ -162,10 +163,21 @@
     border-radius: 15px;
   }
 
-  .music-cover > span { font-size: 1.8rem; }
-  .music-card-heading { gap: 8px; }
-  .music-card-heading h2 { font-size: .98rem; }
-  .music-card-heading strong { font-size: .78rem; }
+  .music-cover>span {
+    font-size: 1.8rem;
+  }
+
+  .music-card-heading {
+    gap: 8px;
+  }
+
+  .music-card-heading h2 {
+    font-size: .98rem;
+  }
+
+  .music-card-heading strong {
+    font-size: .78rem;
+  }
 
   .music-open {
     min-height: 31px;
@@ -189,7 +201,7 @@
 
 @media (max-width: 420px) {
   .music-card {
-    grid-template-columns: 66px minmax(0,1fr);
+    grid-template-columns: 66px minmax(0, 1fr);
     gap: 10px;
   }
 
@@ -199,8 +211,13 @@
     border-radius: 13px;
   }
 
-  .music-card-heading h2 { font-size: .92rem; }
-  .music-open { padding-inline: 7px; }
+  .music-card-heading h2 {
+    font-size: .92rem;
+  }
+
+  .music-open {
+    padding-inline: 7px;
+  }
 }
 
 @media (max-width: 980px) {
@@ -211,7 +228,9 @@
     scrollbar-width: none;
   }
 
-  .main-nav::-webkit-scrollbar { display: none; }
+  .main-nav::-webkit-scrollbar {
+    display: none;
+  }
 
   .main-nav .nav-link {
     flex: 0 0 auto;
