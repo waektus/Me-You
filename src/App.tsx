@@ -1756,7 +1756,7 @@ export default function App() {
               <div>
                 <div className="eyebrow">Our little museum</div>
                 <h1>หอศิลป์ของเราสองคน</h1>
-                <p>เอารูปที่ชอบมาแขวนไว้ตรงนี้ จะได้ไม่หายไปไหน q(≧▽≦q)</p>
+                <p>เอาภาพวาดมาเก็บไว้ที่นี้ซะแหะ ๆ</p>
               </div>
 
               <button
@@ -1826,7 +1826,7 @@ export default function App() {
               <div>
                 <div className="eyebrow">Songs we keep</div>
                 <h1>ห้องเก็บเพลงของเราสองคน</h1>
-                <p>เพลงไหนฟังแล้วนึกถึงกัน เอามาเก็บไว้ตรงนี้เลยย 🎧</p>
+                <p>เพลงไหนที่อยากแชร์ก็เอามาเก็บไว้ที่นี่ซะ</p>
               </div>
 
               <button
