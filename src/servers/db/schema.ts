@@ -139,3 +139,40 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
     .defaultNow()
     .notNull(),
 })
+
+
+export const artworks = pgTable('artworks', {
+  id: serial('id').primaryKey(),
+
+  title: varchar('title', { length: 100 }).notNull(),
+  description: text('description'),
+
+  imageUrl: text('image_url').notNull(),
+  storagePath: text('storage_path').notNull(),
+
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+
+  createdAt: timestamp('created_at')
+    .defaultNow()
+    .notNull(),
+})
+
+export const songs = pgTable('songs', {
+  id: serial('id').primaryKey(),
+
+  title: varchar('title', { length: 120 }).notNull(),
+  artist: varchar('artist', { length: 120 }).notNull(),
+  url: text('url').notNull(),
+  coverUrl: text('cover_url'),
+  message: text('message'),
+
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+
+  createdAt: timestamp('created_at')
+    .defaultNow()
+    .notNull(),
+})

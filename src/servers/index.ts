@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 import { and, desc, eq, gte, sql } from 'drizzle-orm'
 
 import { db } from './db'
-import { pushSubscriptions, quests, rewardRedemptions, users } from './db/schema'
+import { artworks, pushSubscriptions, quests, rewardRedemptions, songs, users } from './db/schema'
 
 const app = express()
 const PORT = Number(process.env.PORT) || 3001
@@ -240,6 +240,229 @@ app.get('/api/users', async (_req, res) => {
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'โหลด users ไม่สำเร็จ' })
+  }
+})
+
+app.get('/api/artworks', async (_req, res) => {
+  try {
+    const data = await db
+      .select()
+      .from(artworks)
+      .orderBy(desc(artworks.createdAt))
+
+    res.json(data)
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'โหลดหอศิลป์ไม่สำเร็จ' })
+  }
+})
+
+app.post('/api/artworks', upload.single('image'), async (req, res) => {
+  let uploadedPath: string | null = null
+
+  try {
+    const userId = Number(req.body.userId)
+    const title = typeof req.body.title === 'string' ? req.body.title.trim() : ''
+    const description =
+      typeof req.body.description === 'string'
+        ? req.body.description.trim()
+        : ''
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ error: 'User ID ไม่ถูกต้อง' })
+    }
+
+    if (!title) {
+      return res.status(400).json({ error: 'กรุณาใส่ชื่อผลงาน' })
+    }
+
+    if (title.length > 100) {
+      return res.status(400).json({ error: 'ชื่อผลงานต้องไม่เกิน 100 ตัวอักษร' })
+    }
+
+    if (description.length > 500) {
+      return res.status(400).json({ error: 'คำบรรยายต้องไม่เกิน 500 ตัวอักษร' })
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'กรุณาเลือกรูปผลงาน' })
+    }
+
+    if (!supabase) {
+      return res.status(500).json({
+        error: 'ยังไม่ได้ตั้งค่า Supabase Storage บนเซิร์ฟเวอร์',
+      })
+    }
+
+    const [user] = await db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+
+    if (!user) {
+      return res.status(404).json({ error: 'ไม่พบผู้ใช้' })
+    }
+
+    const extension = getImageExtension(req.file)
+    uploadedPath =
+      `artworks/${userId}/${Date.now()}-${randomUUID()}.${extension}`
+
+    const { error: uploadError } = await supabase.storage
+      .from(SUPABASE_STORAGE_BUCKET)
+      .upload(uploadedPath, req.file.buffer, {
+        contentType: req.file.mimetype,
+        cacheControl: '3600',
+        upsert: false,
+      })
+
+    if (uploadError) {
+      console.error('Supabase Storage artwork upload failed', uploadError)
+      return res.status(500).json({ error: 'อัปโหลดผลงานไม่สำเร็จ' })
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(SUPABASE_STORAGE_BUCKET)
+      .getPublicUrl(uploadedPath)
+
+    const [artwork] = await db
+      .insert(artworks)
+      .values({
+        title,
+        description: description || null,
+        imageUrl: publicUrlData.publicUrl,
+        storagePath: uploadedPath,
+        userId,
+      })
+      .returning()
+
+    uploadedPath = null
+
+    const allUsers = await db.select({ id: users.id }).from(users)
+
+    for (const other of allUsers) {
+      if (other.id === userId) continue
+
+      void sendPushToUser(other.id, {
+        title: 'มีผลงานใหม่ในหอศิลป์ 🎨',
+        body: `${user.name} เพิ่ม “${artwork.title}” ไว้ในหอศิลป์ของเรา`,
+        url: '/',
+      })
+    }
+
+    return res.status(201).json(artwork)
+  } catch (error) {
+    console.error(error)
+
+    if (uploadedPath) {
+      await deleteStoredPhoto(uploadedPath)
+    }
+
+    return res.status(500).json({ error: 'เพิ่มผลงานไม่สำเร็จ' })
+  }
+})
+
+app.get('/api/songs', async (_req, res) => {
+  try {
+    const data = await db
+      .select()
+      .from(songs)
+      .orderBy(desc(songs.createdAt))
+
+    res.json(data)
+  } catch (error) {
+    console.error(error)
+    res.status(500).json({ error: 'โหลดห้องเพลงไม่สำเร็จ' })
+  }
+})
+
+app.post('/api/songs', async (req, res) => {
+  try {
+    const userId = Number(req.body.userId)
+    const title = typeof req.body.title === 'string' ? req.body.title.trim() : ''
+    const artist =
+      typeof req.body.artist === 'string' ? req.body.artist.trim() : ''
+    const url = typeof req.body.url === 'string' ? req.body.url.trim() : ''
+    const coverUrl =
+      typeof req.body.coverUrl === 'string' ? req.body.coverUrl.trim() : ''
+    const message =
+      typeof req.body.message === 'string' ? req.body.message.trim() : ''
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ error: 'User ID ไม่ถูกต้อง' })
+    }
+
+    if (!title || !artist || !url) {
+      return res.status(400).json({
+        error: 'กรุณาใส่ชื่อเพลง ศิลปิน และลิงก์เพลง',
+      })
+    }
+
+    if (title.length > 120 || artist.length > 120) {
+      return res.status(400).json({
+        error: 'ชื่อเพลงและศิลปินต้องไม่เกิน 120 ตัวอักษร',
+      })
+    }
+
+    if (message.length > 500) {
+      return res.status(400).json({ error: 'ข้อความต้องไม่เกิน 500 ตัวอักษร' })
+    }
+
+    const isHttpUrl = (value: string) => {
+      try {
+        const parsed = new URL(value)
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      } catch {
+        return false
+      }
+    }
+
+    if (!isHttpUrl(url)) {
+      return res.status(400).json({ error: 'ลิงก์เพลงไม่ถูกต้อง' })
+    }
+
+    if (coverUrl && !isHttpUrl(coverUrl)) {
+      return res.status(400).json({ error: 'ลิงก์รูปปกไม่ถูกต้อง' })
+    }
+
+    const [user] = await db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+
+    if (!user) {
+      return res.status(404).json({ error: 'ไม่พบผู้ใช้' })
+    }
+
+    const [song] = await db
+      .insert(songs)
+      .values({
+        title,
+        artist,
+        url,
+        coverUrl: coverUrl || null,
+        message: message || null,
+        userId,
+      })
+      .returning()
+
+    const allUsers = await db.select({ id: users.id }).from(users)
+
+    for (const other of allUsers) {
+      if (other.id === userId) continue
+
+      void sendPushToUser(other.id, {
+        title: 'มีเพลงใหม่ในห้องของเรา 🎵',
+        body: `${user.name} เก็บ “${song.title}” - ${song.artist} ไว้ให้แล้ว`,
+        url: '/',
+      })
+    }
+
+    return res.status(201).json(song)
+  } catch (error) {
+    console.error(error)
+    return res.status(500).json({ error: 'เพิ่มเพลงไม่สำเร็จ' })
   }
 })
 

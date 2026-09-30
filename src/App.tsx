@@ -3,8 +3,10 @@ import type { FormEvent } from 'react'
 import './App.css'
 import './couple-quest.css'
 import './couple-gallery.css'
+import './art-gallery.css'
+import './music-room.css'
 
-type Page = 'quests' | 'gallery' | 'shop'
+type Page = 'quests' | 'gallery' | 'art' | 'music' | 'shop'
 type Tab = 'incoming' | 'sent' | 'review' | 'done'
 type QuestStatus = 'pending' | 'review' | 'completed'
 type VerifyType = 'review' | 'instant'
@@ -23,6 +25,26 @@ type RewardRedemption = {
   userId: number
   reward: string
   cost: number
+  createdAt: string
+}
+
+type Artwork = {
+  id: number
+  title: string
+  description: string | null
+  imageUrl: string
+  userId: number
+  createdAt: string
+}
+
+type Song = {
+  id: number
+  title: string
+  artist: string
+  url: string
+  coverUrl: string | null
+  message: string | null
+  userId: number
   createdAt: string
 }
 
@@ -117,7 +139,7 @@ const PRESET_ICONS = [
 ]
 
 export default function App() {
-  
+
   const [page, setPage] = useState<Page>('quests')
   const [users, setUsers] = useState<User[]>([])
   const [quests, setQuests] = useState<Quest[]>([])
@@ -150,6 +172,24 @@ export default function App() {
   const [rewardModalOpen, setRewardModalOpen] = useState(false)
   const [rewardText, setRewardText] = useState('')
   const [redeeming, setRedeeming] = useState(false)
+
+  const [artworks, setArtworks] = useState<Artwork[]>([])
+  const [artModalOpen, setArtModalOpen] = useState(false)
+  const [artTitle, setArtTitle] = useState('')
+  const [artDescription, setArtDescription] = useState('')
+  const [artFile, setArtFile] = useState<File | null>(null)
+  const [artPreviewUrl, setArtPreviewUrl] = useState('')
+  const [savingArtwork, setSavingArtwork] = useState(false)
+
+  const [songs, setSongs] = useState<Song[]>([])
+  const [songModalOpen, setSongModalOpen] = useState(false)
+  const [songTitle, setSongTitle] = useState('')
+  const [songArtist, setSongArtist] = useState('')
+  const [songUrl, setSongUrl] = useState('')
+  const [songCoverUrl, setSongCoverUrl] = useState('')
+  const [songMessage, setSongMessage] = useState('')
+  const [savingSong, setSavingSong] = useState(false)
+
   const [isInitialLoading, setIsInitialLoading] = useState(true)
   const [isServerWaking, setIsServerWaking] = useState(false)
   const [enablingNotifications, setEnablingNotifications] = useState(false)
@@ -181,23 +221,41 @@ export default function App() {
 
   async function loadData() {
     try {
-      const [usersResponse, questsResponse, rewardsResponse] = await Promise.all([
+      const [
+        usersResponse,
+        questsResponse,
+        rewardsResponse,
+        artworksResponse,
+        songsResponse,
+      ] = await Promise.all([
         fetch(`${API}/users`),
         fetch(`${API}/quests`),
         fetch(`${API}/rewards`),
+        fetch(`${API}/artworks`),
+        fetch(`${API}/songs`),
       ])
 
-      if (!usersResponse.ok || !questsResponse.ok || !rewardsResponse.ok) {
+      if (
+        !usersResponse.ok ||
+        !questsResponse.ok ||
+        !rewardsResponse.ok ||
+        !artworksResponse.ok ||
+        !songsResponse.ok
+      ) {
         throw new Error('โหลดข้อมูลไม่สำเร็จ')
       }
 
       const usersData: User[] = await usersResponse.json()
       const questsData: Quest[] = await questsResponse.json()
       const rewardsData: RewardRedemption[] = await rewardsResponse.json()
+      const artworksData: Artwork[] = await artworksResponse.json()
+      const songsData: Song[] = await songsResponse.json()
 
       setUsers(usersData)
       setQuests(questsData)
       setRewards(rewardsData)
+      setArtworks(artworksData)
+      setSongs(songsData)
 
       setCurrentUserId((current) => {
         if (current !== null) return current
@@ -236,6 +294,16 @@ export default function App() {
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
 
+      if (artModalOpen) {
+        closeArtModal()
+        return
+      }
+
+      if (songModalOpen) {
+        closeSongModal()
+        return
+      }
+
       if (rewardModalOpen) {
         closeRewardModal()
         return
@@ -254,7 +322,7 @@ export default function App() {
     return () => {
       document.removeEventListener('keydown', handleEscape)
     }
-  }, [photoQuest, rewardModalOpen])
+  }, [artModalOpen, photoQuest, rewardModalOpen, songModalOpen])
 
   useEffect(() => {
     if (!switchMessage) return
@@ -281,6 +349,20 @@ export default function App() {
       URL.revokeObjectURL(objectUrl)
     }
   }, [photoFile])
+
+  useEffect(() => {
+    if (!artFile) {
+      setArtPreviewUrl('')
+      return
+    }
+
+    const objectUrl = URL.createObjectURL(artFile)
+    setArtPreviewUrl(objectUrl)
+
+    return () => {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }, [artFile])
 
   const filteredQuests = useMemo(() => {
     if (currentUserId === null) return []
@@ -490,6 +572,110 @@ export default function App() {
   function closeRewardModal() {
     setRewardModalOpen(false)
     setRewardText('')
+  }
+
+  function closeArtModal() {
+    if (savingArtwork) return
+
+    setArtModalOpen(false)
+    setArtTitle('')
+    setArtDescription('')
+    setArtFile(null)
+  }
+
+  function closeSongModal() {
+    if (savingSong) return
+
+    setSongModalOpen(false)
+    setSongTitle('')
+    setSongArtist('')
+    setSongUrl('')
+    setSongCoverUrl('')
+    setSongMessage('')
+  }
+
+  async function createArtwork(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!currentUser || !artFile || savingArtwork) return
+
+    try {
+      setSavingArtwork(true)
+
+      const formData = new FormData()
+      formData.append('title', artTitle.trim())
+      formData.append('description', artDescription.trim())
+      formData.append('userId', String(currentUser.id))
+      formData.append('image', artFile)
+
+      const response = await fetch(`${API}/artworks`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(data?.error ?? 'เพิ่มผลงานไม่สำเร็จ')
+      }
+
+      setArtworks((current) => [data as Artwork, ...current])
+      setArtModalOpen(false)
+      setArtTitle('')
+      setArtDescription('')
+      setArtFile(null)
+      showToast('แขวนรูปไว้ในหอศิลป์แล้วว 🎨')
+    } catch (error) {
+      console.error(error)
+      showToast(error instanceof Error ? error.message : 'เพิ่มผลงานไม่สำเร็จ')
+    } finally {
+      setSavingArtwork(false)
+    }
+  }
+
+  async function createSong(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!currentUser || savingSong) return
+
+    try {
+      setSavingSong(true)
+
+      const response = await fetch(`${API}/songs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: songTitle.trim(),
+          artist: songArtist.trim(),
+          url: songUrl.trim(),
+          coverUrl: songCoverUrl.trim(),
+          message: songMessage.trim(),
+          userId: currentUser.id,
+        }),
+      })
+
+      const data = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        throw new Error(data?.error ?? 'เพิ่มเพลงไม่สำเร็จ')
+      }
+
+      setSongs((current) => [data as Song, ...current])
+      setSongModalOpen(false)
+      setSongTitle('')
+      setSongArtist('')
+      setSongUrl('')
+      setSongCoverUrl('')
+      setSongMessage('')
+      showToast('เอาเพลงมาเก็บไว้แล้วว 🎵')
+    } catch (error) {
+      console.error(error)
+      showToast(error instanceof Error ? error.message : 'เพิ่มเพลงไม่สำเร็จ')
+    } finally {
+      setSavingSong(false)
+    }
   }
 
   async function savePushSubscription(userId: number, subscription: PushSubscription) {
@@ -885,6 +1071,22 @@ export default function App() {
 
             <button
               type="button"
+              className={`nav-link ${page === 'art' ? 'active' : ''}`}
+              onClick={() => setPage('art')}
+            >
+              Art
+            </button>
+
+            <button
+              type="button"
+              className={`nav-link ${page === 'music' ? 'active' : ''}`}
+              onClick={() => setPage('music')}
+            >
+              Music
+            </button>
+
+            <button
+              type="button"
               className={`nav-link ${page === 'shop' ? 'active' : ''}`}
               onClick={() => setPage('shop')}
             >
@@ -894,9 +1096,8 @@ export default function App() {
 
           <button
             type="button"
-            className={`notification-toggle ${
-              notificationPermission === 'granted' ? 'enabled' : ''
-            }`}
+            className={`notification-toggle ${notificationPermission === 'granted' ? 'enabled' : ''
+              }`}
             onClick={() => void enableNotifications()}
             disabled={!currentUser || enablingNotifications}
             title={
@@ -1170,43 +1371,42 @@ export default function App() {
                         {tab === 'incoming' &&
                           quest.questMode !== 'couple' &&
                           quest.questType === 'normal' && (
-                          <button
-                            className="action"
-                            onClick={() => void completeQuest(quest)}
-                          >
-                            ทำเสร็จแล้ว
-                          </button>
-                        )}
+                            <button
+                              className="action"
+                              onClick={() => void completeQuest(quest)}
+                            >
+                              ทำเสร็จแล้ว
+                            </button>
+                          )}
 
                         {tab === 'incoming' &&
                           quest.questMode !== 'couple' &&
                           quest.questType === 'photo' && (
-                          <label
-                            className={`action photo-submit ${
-                              uploadingQuestId === quest.id ? 'disabled' : ''
-                            }`}
-                          >
-                            {uploadingQuestId === quest.id
-                              ? 'กำลังอัปโหลด...'
-                              : '📷 ถ่าย / เลือกรูป'}
+                            <label
+                              className={`action photo-submit ${uploadingQuestId === quest.id ? 'disabled' : ''
+                                }`}
+                            >
+                              {uploadingQuestId === quest.id
+                                ? 'กำลังอัปโหลด...'
+                                : '📷 ถ่าย / เลือกรูป'}
 
-                            <input
-                              type="file"
-                              accept="image/*"
-                              hidden
-                              disabled={uploadingQuestId === quest.id}
-                              onChange={(event) => {
-                                const file = event.target.files?.[0]
+                              <input
+                                type="file"
+                                accept="image/*"
+                                hidden
+                                disabled={uploadingQuestId === quest.id}
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0]
 
-                                if (file) {
-                                  choosePhotoForQuest(quest, file)
-                                }
+                                  if (file) {
+                                    choosePhotoForQuest(quest, file)
+                                  }
 
-                                event.currentTarget.value = ''
-                              }}
-                            />
-                          </label>
-                        )}
+                                  event.currentTarget.value = ''
+                                }}
+                              />
+                            </label>
+                          )}
 
                         {tab === 'incoming' &&
                           quest.questMode === 'couple' &&
@@ -1218,9 +1418,8 @@ export default function App() {
                             </span>
                           ) : quest.questType === 'photo' ? (
                             <label
-                              className={`action photo-submit couple-photo-submit ${
-                                uploadingQuestId === quest.id ? 'disabled' : ''
-                              }`}
+                              className={`action photo-submit couple-photo-submit ${uploadingQuestId === quest.id ? 'disabled' : ''
+                                }`}
                             >
                               {uploadingQuestId === quest.id
                                 ? 'กำลังอัปโหลด...'
@@ -1334,11 +1533,10 @@ export default function App() {
                   <div className="gallery-grid">
                     {group.items.map(({ quest, photos }) => (
                       <article
-                        className={`gallery-card ${
-                          quest.questMode === 'couple'
-                            ? 'couple-gallery-card'
-                            : ''
-                        }`}
+                        className={`gallery-card ${quest.questMode === 'couple'
+                          ? 'couple-gallery-card'
+                          : ''
+                          }`}
                         key={quest.id}
                       >
                         {quest.questMode === 'couple' ? (
@@ -1441,13 +1639,13 @@ export default function App() {
                             <span>
                               {quest.questMode === 'couple'
                                 ? `${getUserName(quest.senderId)} + ${getUserName(
-                                    quest.receiverId,
-                                  )}`
+                                  quest.receiverId,
+                                )}`
                                 : `โดย ${getUserName(quest.receiverId)}`}
                             </span>
 
                             {quest.questMode === 'couple' &&
-                            quest.status === 'pending' ? (
+                              quest.status === 'pending' ? (
                               <span className="badge blue">รอรูปอีกฝ่าย</span>
                             ) : quest.status === 'review' ? (
                               <span className="badge blue">รอตรวจ</span>
@@ -1461,6 +1659,166 @@ export default function App() {
                   </div>
                 </section>
               ))
+            )}
+          </main>
+        )}
+
+        {page === 'art' && (
+          <main className="art-page">
+            <section className="collection-hero art-hero">
+              <div>
+                <div className="eyebrow">Our little museum</div>
+                <h1>หอศิลป์ของเราสองคน</h1>
+                <p>เอารูปมาแขวนไว้ตรงนี้ซะ ≽^•༚• ྀི≼</p>
+              </div>
+
+              <button
+                type="button"
+                className="primary collection-add-button"
+                onClick={() => setArtModalOpen(true)}
+              >
+                ＋ เอารูปมาแขวน
+              </button>
+            </section>
+
+            {artworks.length === 0 ? (
+              <section className="collection-empty">
+                <div className="collection-empty-icon">🖼️</div>
+                <h2>โห...ยังไม่มีอะไรแขวนเลย</h2>
+                <p>หารูปน่ารัก ๆ มาแปะเป็นรูปแรกกัน</p>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => setArtModalOpen(true)}
+                >
+                  ＋ แขวนรูปแรก
+                </button>
+              </section>
+            ) : (
+              <section className="art-grid">
+                {artworks.map((artwork) => (
+                  <article className="art-card" key={artwork.id}>
+                    <a
+                      className="art-image-wrap"
+                      href={getPhotoUrl(artwork.imageUrl)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <img src={getPhotoUrl(artwork.imageUrl)} alt={artwork.title} />
+                    </a>
+
+                    <div className="art-card-body">
+                      <div className="art-card-title">
+                        <h2>{artwork.title}</h2>
+                        <span>🎨</span>
+                      </div>
+
+                      {artwork.description && <p>{artwork.description}</p>}
+
+                      <div className="art-card-meta">
+                        <span>โดย {getUserName(artwork.userId)}</span>
+                        <time dateTime={artwork.createdAt}>
+                          {new Date(artwork.createdAt).toLocaleDateString('th-TH', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </time>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </section>
+            )}
+          </main>
+        )}
+
+        {page === 'music' && (
+          <main className="music-page">
+            <section className="collection-hero music-hero">
+              <div>
+                <div className="eyebrow">Songs we keep</div>
+                <h1>ห้องเก็บเพลงของเราสองคน</h1>
+                <p>เพลงก็เอามาเก็บไว้ตรงนี้เลยยนะ /•᷅‎‎•᷄\੭</p>
+              </div>
+
+              <button
+                type="button"
+                className="primary collection-add-button"
+                onClick={() => setSongModalOpen(true)}
+              >
+                ＋ เอาเพลงมาเก็บ
+              </button>
+            </section>
+
+            {songs.length === 0 ? (
+              <section className="collection-empty">
+                <div className="collection-empty-icon">🎧</div>
+                <h2>ห้องนี้ยังเงียบอยู่เลยย</h2>
+                <p>หาเพลงแรกมาเปิดห้องกันเถอะ</p>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => setSongModalOpen(true)}
+                >
+                  ＋ เก็บเพลงแรก
+                </button>
+              </section>
+            ) : (
+              <section className="music-list">
+                {songs.map((song) => (
+                  <article className="music-card" key={song.id}>
+                    <a
+                      className="music-cover"
+                      href={song.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`เปิดเพลง ${song.title}`}
+                    >
+                      {song.coverUrl ? (
+                        <img src={song.coverUrl} alt="" />
+                      ) : (
+                        <span>♫</span>
+                      )}
+                    </a>
+
+                    <div className="music-card-body">
+                      <div className="music-card-heading">
+                        <div>
+                          <h2>{song.title}</h2>
+                          <strong>{song.artist}</strong>
+                        </div>
+
+                        <a
+                          className="music-open"
+                          href={song.url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          ไปฟัง ↗
+                        </a>
+                      </div>
+
+                      {song.message && (
+                        <blockquote className="music-message">
+                          “{song.message}”
+                        </blockquote>
+                      )}
+
+                      <div className="music-card-meta">
+                        <span>เพิ่มโดย {getUserName(song.userId)}</span>
+                        <time dateTime={song.createdAt}>
+                          {new Date(song.createdAt).toLocaleDateString('th-TH', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </time>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </section>
             )}
           </main>
         )}
@@ -1582,11 +1940,10 @@ export default function App() {
             <div className="quest-type-picker">
               <button
                 type="button"
-                className={`quest-type-option ${
-                  questMode === 'solo' && questType === 'normal'
-                    ? 'selected'
-                    : ''
-                }`}
+                className={`quest-type-option ${questMode === 'solo' && questType === 'normal'
+                  ? 'selected'
+                  : ''
+                  }`}
                 onClick={() => {
                   setQuestMode('solo')
                   setQuestType('normal')
@@ -1606,11 +1963,10 @@ export default function App() {
 
               <button
                 type="button"
-                className={`quest-type-option ${
-                  questMode === 'solo' && questType === 'photo'
-                    ? 'selected'
-                    : ''
-                }`}
+                className={`quest-type-option ${questMode === 'solo' && questType === 'photo'
+                  ? 'selected'
+                  : ''
+                  }`}
                 onClick={() => {
                   setQuestMode('solo')
                   setQuestType('photo')
@@ -1629,11 +1985,10 @@ export default function App() {
 
               <button
                 type="button"
-                className={`quest-type-option couple-option ${
-                  questMode === 'couple' && questType === 'normal'
-                    ? 'selected'
-                    : ''
-                }`}
+                className={`quest-type-option couple-option ${questMode === 'couple' && questType === 'normal'
+                  ? 'selected'
+                  : ''
+                  }`}
                 onClick={() => {
                   setQuestMode('couple')
                   setQuestType('normal')
@@ -1654,11 +2009,10 @@ export default function App() {
 
               <button
                 type="button"
-                className={`quest-type-option couple-option ${
-                  questMode === 'couple' && questType === 'photo'
-                    ? 'selected'
-                    : ''
-                }`}
+                className={`quest-type-option couple-option ${questMode === 'couple' && questType === 'photo'
+                  ? 'selected'
+                  : ''
+                  }`}
                 onClick={() => {
                   setQuestMode('couple')
                   setQuestType('photo')
@@ -1745,9 +2099,8 @@ export default function App() {
                 <button
                   key={emoji}
                   type="button"
-                  className={`icon-choice ${
-                    icon === emoji && !customIconOpen ? 'selected' : ''
-                  }`}
+                  className={`icon-choice ${icon === emoji && !customIconOpen ? 'selected' : ''
+                    }`}
                   onClick={() => {
                     setIcon(emoji)
                     setCustomIconOpen(false)
@@ -1759,9 +2112,8 @@ export default function App() {
 
               <button
                 type="button"
-                className={`icon-choice icon-custom ${
-                  customIconOpen ? 'selected' : ''
-                }`}
+                className={`icon-choice icon-custom ${customIconOpen ? 'selected' : ''
+                  }`}
                 onClick={() => {
                   setCustomIconOpen(true)
 
@@ -1961,6 +2313,225 @@ export default function App() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {artModalOpen && (
+        <div
+          className="collection-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="artModalTitle"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !savingArtwork) {
+              closeArtModal()
+            }
+          }}
+        >
+          <form className="collection-modal" onSubmit={createArtwork}>
+            <div className="modal-head">
+              <div>
+                <div className="collection-modal-eyebrow">Our little museum</div>
+                <h2 id="artModalTitle">เอารูปมาแขวนในหอศิลป์ 🎨</h2>
+              </div>
+
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="ปิด"
+                disabled={savingArtwork}
+                onClick={closeArtModal}
+              >
+                ×
+              </button>
+            </div>
+
+            {artPreviewUrl && (
+              <img
+                className="art-upload-preview"
+                src={artPreviewUrl}
+                alt="ตัวอย่างผลงาน"
+              />
+            )}
+
+            <div className="field">
+              <label htmlFor="artImage">รูปที่จะเอามาแขวน</label>
+              <input
+                id="artImage"
+                type="file"
+                accept="image/*"
+                required
+                disabled={savingArtwork}
+                onChange={(event) => setArtFile(event.target.files?.[0] ?? null)}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="artTitle">ตั้งชื่อรูปหน่อย</label>
+              <input
+                id="artTitle"
+                required
+                maxLength={100}
+                placeholder="เช่น ภาพเป็ดน่ารักๆ"
+                value={artTitle}
+                disabled={savingArtwork}
+                onChange={(event) => setArtTitle(event.target.value)}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="artDescription">อยากเขียนอะไรไว้ด้วยมั้ย</label>
+              <textarea
+                id="artDescription"
+                rows={3}
+                maxLength={500}
+                placeholder="เช่น น่ารักจนอยากกิน"
+                value={artDescription}
+                disabled={savingArtwork}
+                onChange={(event) => setArtDescription(event.target.value)}
+              />
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="action"
+                disabled={savingArtwork}
+                onClick={closeArtModal}
+              >
+                ยกเลิก
+              </button>
+
+              <button
+                type="submit"
+                className="primary"
+                disabled={!artFile || !artTitle.trim() || savingArtwork}
+              >
+                {savingArtwork ? 'กำลังแขวน...' : 'แขวนไว้เลย 🎨'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {songModalOpen && (
+        <div
+          className="collection-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="songModalTitle"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !savingSong) {
+              closeSongModal()
+            }
+          }}
+        >
+          <form className="collection-modal" onSubmit={createSong}>
+            <div className="modal-head">
+              <div>
+                <div className="collection-modal-eyebrow">Songs we keep</div>
+                <h2 id="songModalTitle">เอาเพลงนี้มาเก็บกัน 🎵</h2>
+              </div>
+
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="ปิด"
+                disabled={savingSong}
+                onClick={closeSongModal}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="field">
+              <label htmlFor="songTitle">ชื่อเพลง</label>
+              <input
+                id="songTitle"
+                required
+                maxLength={120}
+                placeholder="ชื่อเพลงอะไรน้า"
+                value={songTitle}
+                disabled={savingSong}
+                onChange={(event) => setSongTitle(event.target.value)}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="songArtist">ศิลปิน</label>
+              <input
+                id="songArtist"
+                required
+                maxLength={120}
+                placeholder="ใครร้องเอ่ย"
+                value={songArtist}
+                disabled={savingSong}
+                onChange={(event) => setSongArtist(event.target.value)}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="songUrl">ลิงก์เพลง</label>
+              <input
+                id="songUrl"
+                type="url"
+                required
+                placeholder="https://open.spotify.com/... หรือ YouTube"
+                value={songUrl}
+                disabled={savingSong}
+                onChange={(event) => setSongUrl(event.target.value)}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="songCoverUrl">ลิงก์รูปปก (ไม่ใส่ก็ได้)</label>
+              <input
+                id="songCoverUrl"
+                type="url"
+                placeholder="https://..."
+                value={songCoverUrl}
+                disabled={savingSong}
+                onChange={(event) => setSongCoverUrl(event.target.value)}
+              />
+            </div>
+
+            <div className="field">
+              <label htmlFor="songMessage">เขียนข้อความได้น้าา</label>
+              <textarea
+                id="songMessage"
+                rows={3}
+                maxLength={500}
+                placeholder="เช่น อันนี้เพราะมากแชร์ ๆ อิอิ"
+                value={songMessage}
+                disabled={savingSong}
+                onChange={(event) => setSongMessage(event.target.value)}
+              />
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="action"
+                disabled={savingSong}
+                onClick={closeSongModal}
+              >
+                ยกเลิก
+              </button>
+
+              <button
+                type="submit"
+                className="primary"
+                disabled={
+                  !songTitle.trim() ||
+                  !songArtist.trim() ||
+                  !songUrl.trim() ||
+                  savingSong
+                }
+              >
+                {savingSong ? 'กำลังเก็บ...' : 'เก็บไว้เลย 🎵'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
